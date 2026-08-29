@@ -1,7 +1,7 @@
 from datetime import date
 from enum import Enum
-from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field, field_validator
+from typing import Any, Dict, List, Optional, Union
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class DecisionEnum(str, Enum):
@@ -11,27 +11,58 @@ class DecisionEnum(str, Enum):
 
 class PersonalInfo(BaseModel):
     full_name: str = Field(..., description="Full Name")
-    email_address: str = Field(..., description="Email Address")
-    mobile_number: str = Field(..., description="Mobile Number")
-    date_of_birth: str = Field(..., description="Date of Birth in MM-DD-YYYY")
+    email_address: Optional[str] = Field(default="driver@komute.com", description="Email Address")
+    mobile_number: Optional[str] = Field(default="+10000000000", description="Mobile Number")
+    date_of_birth: str = Field(..., description="Date of Birth in MM-DD-YYYY or YYYY-MM-DD")
     gender: Optional[str] = Field(None, description="Gender")
-    role: str = Field(..., description="Role (e.g. Driver)")
+    role: Optional[str] = Field(default="Driver", description="Role (e.g. Driver)")
     password: Optional[str] = Field(None, description="Password")
     self_description: Optional[str] = Field(None, description="Self Description")
 
 
 class LicenseDetails(BaseModel):
     license_number: str = Field(..., description="License Number (e.g., DL1234567)")
-    issuing_province: str = Field(..., description="Issuing Province")
-    license_expiry_date: str = Field(..., description="License Expiry Date (MM-DD-YYYY)")
+    issuing_province: Optional[str] = Field(default="ON", description="Issuing Province/State")
+    license_expiry_date: Optional[str] = Field(default=None, description="License Expiry Date (MM-DD-YYYY or YYYY-MM-DD)")
+    expiry_date: Optional[str] = Field(default=None, description="Alias for license_expiry_date")
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_expiry(cls, values: Any) -> Any:
+        if isinstance(values, dict):
+            if not values.get("license_expiry_date") and values.get("expiry_date"):
+                values["license_expiry_date"] = values["expiry_date"]
+            elif not values.get("expiry_date") and values.get("license_expiry_date"):
+                values["expiry_date"] = values["license_expiry_date"]
+            if not values.get("license_expiry_date"):
+                values["license_expiry_date"] = "2030-01-01"
+            if not values.get("issuing_province"):
+                values["issuing_province"] = "ON"
+        return values
 
 
 class VehicleDetails(BaseModel):
-    make: Optional[str] = Field(None, description="Vehicle Make")
-    model: Optional[str] = Field(None, description="Vehicle Model")
-    year: Optional[str] = Field(None, description="Vehicle Year")
-    color: Optional[str] = Field(None, description="Vehicle Color")
-    plate: Optional[str] = Field(None, description="License Plate (e.g., DL01AB1234)")
+    make: Optional[str] = Field(default="Standard", description="Vehicle Make")
+    model: Optional[str] = Field(default="Vehicle", description="Vehicle Model")
+    year: Optional[Union[str, int]] = Field(default=2022, description="Vehicle Year")
+    color: Optional[str] = Field(default="Unknown", description="Vehicle Color")
+    plate: Optional[str] = Field(default=None, description="License Plate (e.g., DL01AB1234)")
+    plate_number: Optional[str] = Field(default=None, description="Alias for plate")
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_plate(cls, values: Any) -> Any:
+        if isinstance(values, dict):
+            if not values.get("plate") and values.get("plate_number"):
+                values["plate"] = values["plate_number"]
+            elif not values.get("plate_number") and values.get("plate"):
+                values["plate_number"] = values["plate"]
+            if not values.get("plate"):
+                values["plate"] = ""
+            if not values.get("color"):
+                values["color"] = "Unknown"
+        return values
+
 
 
 class VerificationImages(BaseModel):

@@ -89,44 +89,46 @@ class VerificationPipeline:
                 manual_review_reasons=[],
             )
 
-        # 2. Stage 2A: Privacy Face Isolation (Zero-PII Cropping with RetinaFace MobileNet0.25 Verification Layer)
-        # Extract driver face ONLY from DL card using full uncompressed native resolution
-        dl_face_crop, dl_bbox, dl_sanitized = face_privacy_cropper.extract_isolated_face(
+        # 2. Stage 2A: Privacy Face Isolation (Zero-PII Cropping with YuNet Landmark Verification Layer)
+        # Extract driver face ONLY from DL card using uncompressed native resolution
+        dl_face_crop, dl_bbox, dl_sanitized = await asyncio.to_thread(
+            face_privacy_cropper.extract_isolated_face,
             img_bgr=dl_img,
             margin_ratio=settings.face_crop_padding_ratio,
         )
 
-        # Stage 2B: Cloud VLM Biometric Verification (runs asynchronously over network)
-        stage2_task = asyncio.create_task(
-            vlm_face_verifier.verify_biometrics(
-                selfie_crop_bgr=selfie_img,
-                dl_face_crop_bgr=dl_face_crop,
-            )
-        )
-
-        # Execute Stage 1 (DL OCR on uncompressed full-res image) and Stage 3 (Vehicle ALPR)
-        stage1_res = await asyncio.to_thread(
+        # Concurrently execute Stage 1 (DL OCR), Stage 2B (Cloud VLM Biometrics), and Stage 3 (Vehicle ALPR)
+        stage1_task = asyncio.to_thread(
             dl_ocr_engine.verify_license,
             img_bgr=dl_img,
             personal_info=request.personal_info,
             license_details=request.license_details,
         )
 
-        stage3_output = await asyncio.to_thread(
+        stage2_task = vlm_face_verifier.verify_biometrics(
+            selfie_crop_bgr=selfie_img,
+            dl_face_crop_bgr=dl_face_crop,
+        )
+
+        stage3_task = asyncio.to_thread(
             vehicle_alpr_engine.verify_vehicle,
             vehicle_img=vehicle_img,
             vehicle_details=request.vehicle_details,
             return_crop=True,
         )
 
-        # Await Stage 2 Biometrics
-        stage2_res = await stage2_task
+        stage1_res, stage2_res, stage3_output = await asyncio.gather(
+            stage1_task,
+            stage2_task,
+            stage3_task,
+        )
 
         # Unpack Stage 3 output (vehicle verification result + cropped license plate)
         if isinstance(stage3_output, tuple):
             stage3_res, plate_crop = stage3_output
         else:
             stage3_res, plate_crop = stage3_output, None
+
 
         # 3. Composite Decision Matrix
         decision, composite_score, rejection_reasons, manual_reasons, composite_proof = self._evaluate_composite_decision(

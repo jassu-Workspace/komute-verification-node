@@ -61,20 +61,23 @@ class DrivingLicenseOCREngine:
         return lines
 
     def generate_date_variations(self, date_str: str) -> List[str]:
-        """Generates common string representations of a YYYY-MM-DD date."""
+        """Generates common string representations of a date."""
         if not date_str:
             return []
         try:
+            from dateutil import parser
             d = parser.parse(date_str)
             return [
-                date_str,  # YYYY-MM-DD
+                date_str,  # Original
+                d.strftime("%Y-%m-%d"),
                 d.strftime("%d-%m-%Y"),
                 d.strftime("%d/%m/%Y"),
                 d.strftime("%m/%d/%Y"),
                 d.strftime("%d.%m.%Y"),
-                d.strftime("%d %b %Y").lower(),  # e.g. 15 may 2024
+                d.strftime("%d %b %Y").lower(),
                 d.strftime("%b %d, %Y").lower(),
                 d.strftime("%Y/%m/%d"),
+                d.strftime("%Y%m%d"),
             ]
         except Exception:
             return [date_str]
@@ -90,140 +93,230 @@ class DrivingLicenseOCREngine:
                 text = text.replace(k, v)
         return text
 
+    def _match_dl_number(self, raw_texts: List[str], target_dl: str) -> Tuple[float, Optional[str]]:
+        """
+        High-precision DL number matching:
+        - Checks line-by-line exact substring & reverse substring containment
+        - Sliding-window Levenshtein matching on alphanumeric streams
+        - Confusion-matrix normalization (0/O, 1/I, 5/S, 2/Z, 8/B)
+        - Whole concatenated text fallback
+        """
+        if not target_dl:
+            return 100.0, None
+
+        import re
+        clean_target = re.sub(r'[^A-Za-z0-9]', '', target_dl).upper()
+        if not clean_target:
+            return 100.0, None
+
+        confusion_map = {'O': '0', 'Q': '0', 'I': '1', 'L': '1', 'S': '5', 'B': '8', 'Z': '2', 'G': '6'}
+
+        def apply_confusion(s: str) -> str:
+            for k, v in confusion_map.items():
+                s = s.replace(k, v)
+            return s
+
+        target_conf = apply_confusion(clean_target)
+        best_score = 0.0
+        best_match: Optional[str] = None
+
+        for line in raw_texts:
+            clean_line = re.sub(r'[^A-Za-z0-9]', '', line).upper()
+            if not clean_line or len(clean_line) < 3:
+                continue
+
+            # 1. Exact Substring Containment (e.g. D61014070660905 in D61014070660905E)
+            if clean_target in clean_line:
+                return 100.0, line
+
+            # 2. Confusion-aware Substring Containment
+            line_conf = apply_confusion(clean_line)
+            if target_conf in line_conf:
+                score = 98.0
+                if score > best_score:
+                    best_score = score
+                    best_match = line
+
+            # 3. Sliding Window Comparison if line is longer than target
+            if len(clean_line) >= len(clean_target):
+                w_len = len(clean_target)
+                for i in range(len(clean_line) - w_len + 1):
+                    chunk = clean_line[i : i + w_len]
+                    s1 = fuzz.ratio(clean_target, chunk)
+                    if s1 > best_score:
+                        best_score = s1
+                        best_match = line
+
+                    s2 = fuzz.ratio(target_conf, apply_confusion(chunk))
+                    if s2 > best_score:
+                        best_score = s2
+                        best_match = line
+            else:
+                # Reverse substring (line is a significant chunk of DL number)
+                if len(clean_line) >= 7 and clean_line in clean_target:
+                    s3 = (len(clean_line) / len(clean_target)) * 100.0
+                    if s3 > best_score:
+                        best_score = s3
+                        best_match = line
+
+                s4 = fuzz.partial_ratio(clean_target, clean_line)
+                if s4 > best_score:
+                    best_score = s4
+                    best_match = line
+
+            s5 = fuzz.ratio(clean_target, clean_line)
+            if s5 > best_score:
+                best_score = s5
+                best_match = line
+
+        # 4. Whole Concatenated Clean Text Check
+        whole_clean = re.sub(r'[^A-Za-z0-9]', '', " ".join(raw_texts)).upper()
+        if clean_target in whole_clean:
+            return 100.0, best_match or target_dl
+
+        if target_conf in apply_confusion(whole_clean):
+            best_score = max(best_score, 95.0)
+
+        return best_score, best_match
+
+    def _match_name(self, raw_texts: List[str], target_name: str) -> Tuple[float, Optional[str]]:
+        """Multi-token name matching across lines and joined OCR text."""
+        if not target_name:
+            return 100.0, None
+
+        import re
+        tokens = [t.upper() for t in re.findall(r'[A-Za-z0-9]+', target_name)]
+        if not tokens:
+            return 100.0, None
+
+        whole_upper = " ".join(raw_texts).upper()
+        # If every token of the name appears in the OCR text
+        if all(t in whole_upper for t in tokens):
+            return 100.0, target_name
+
+        best_score = 0.0
+        for line in raw_texts:
+            s_sort = fuzz.token_sort_ratio(target_name.upper(), line.upper())
+            best_score = max(best_score, s_sort)
+
+        s_partial = fuzz.partial_token_set_ratio(target_name.lower(), whole_upper.lower())
+        best_score = max(best_score, s_partial)
+        return best_score, target_name
+
+    def _match_date(self, raw_texts: List[str], target_date: str) -> Tuple[float, Optional[str]]:
+        """Multi-format date and digit sequence matching."""
+        if not target_date:
+            return 100.0, None
+
+        import re
+        target_digits = re.sub(r'\D', '', target_date)
+        if not target_digits:
+            return 100.0, None
+
+        # Try date variations
+        variations = self.generate_date_variations(target_date)
+        whole_text = " ".join(raw_texts).lower()
+
+        for v in variations:
+            if v.lower() in whole_text:
+                return 100.0, v
+
+        best_score = 0.0
+        best_match: Optional[str] = None
+
+        for line in raw_texts:
+            line_digits = re.sub(r'\D', '', line)
+            if target_digits in line_digits:
+                return 100.0, line
+            if len(line_digits) >= 6:
+                s = fuzz.partial_ratio(target_digits, line_digits)
+                if s > best_score:
+                    best_score = s
+                    best_match = line
+
+        whole_digits = re.sub(r'\D', '', whole_text)
+        if target_digits in whole_digits:
+            return 100.0, best_match or target_date
+
+        return best_score, best_match
+
     def verify_license(
         self, img_bgr: np.ndarray, personal_info: PersonalInfo, license_details: LicenseDetails
     ) -> LicenseOcrResult:
         """
         Core verification pipeline implementing fine-tuned RapidOCR recognition and multi-pass fuzzy validation.
         """
+        from app.config import settings
+
+        threshold_name = getattr(settings, "fuzzy_name_threshold", 0.85) * 100.0
+        threshold_dl = getattr(settings, "fuzzy_dl_threshold", 0.85) * 100.0
+        threshold_dob = 80.0
+        threshold_exp = 80.0
+
         # PASS 1: Standard Extraction
         raw_texts = self.extract_text_lines(img_bgr)
-        whole_raw_text = " ".join(raw_texts).lower()
 
-        # Helper function to compute scores for a given raw text string
-        name = personal_info.full_name.lower() if personal_info.full_name else ""
-        dl_number = license_details.license_number.lower() if license_details.license_number else ""
+        name = personal_info.full_name if personal_info.full_name else ""
+        dl_number = license_details.license_number if license_details.license_number else ""
+        dob = personal_info.date_of_birth if personal_info.date_of_birth else ""
+        exp = license_details.license_expiry_date or license_details.expiry_date or ""
+        prov = license_details.issuing_province if license_details.issuing_province else ""
 
-        def compute_scores(text: str):
-            s_name = fuzz.partial_token_set_ratio(name, text) if name else 100.0
+        def compute_all_scores(lines: List[str]):
+            s_name, m_name = self._match_name(lines, name)
+            s_id, m_id = self._match_dl_number(lines, dl_number)
+            s_dob, m_dob = self._match_date(lines, dob)
+            s_exp, m_exp = self._match_date(lines, exp)
             
-            # DL Number match: Direct + confusion-aware match
-            s_id = fuzz.partial_token_set_ratio(self._normalize_digits(dl_number), self._normalize_digits(text)) if dl_number else 100.0
-            if dl_number:
-                s_id_conf = fuzz.partial_token_set_ratio(
-                    self._normalize_digits(dl_number, apply_confusion=True),
-                    self._normalize_digits(text, apply_confusion=True)
-                )
-                s_id = max(s_id, s_id_conf)
+            whole_text = " ".join(lines).lower()
+            s_reg = fuzz.partial_token_set_ratio(prov.lower(), whole_text) if prov and prov != "N/A" else 100.0
+            return (s_name, m_name), (s_id, m_id), (s_dob, m_dob), (s_exp, m_exp), s_reg
 
-            import re
-            pure_digits_text = re.sub(r'\D', '', text)
+        (score_name, matched_name), (score_id, matched_dl), (score_dob, matched_dob), (score_exp, matched_exp), score_region = compute_all_scores(raw_texts)
 
-            def get_best_date_match(target_digits, source_digits):
-                if not target_digits:
-                    return 100.0
-                if target_digits in source_digits:
-                    return 100.0
-                best_score = 0.0
-                window_size = len(target_digits) + 3
-                for i in range(len(source_digits) - len(target_digits) + 1):
-                    chunk = source_digits[i : i + window_size]
-                    best_score = max(best_score, fuzz.partial_ratio(target_digits, chunk))
-                return best_score
-
-            target_dob = personal_info.date_of_birth.lower() if personal_info.date_of_birth else ""
-            target_dob_digits = re.sub(r'\D', '', target_dob)
-            s_dob = fuzz.partial_token_set_ratio(target_dob, self._normalize_digits(text)) if target_dob else 100.0
-
-            if target_dob_digits:
-                digit_score = get_best_date_match(target_dob_digits, pure_digits_text)
-                if digit_score >= 85.0:
-                    s_dob = max(s_dob, 90.0)
-
-            target_exp = license_details.license_expiry_date.lower() if license_details.license_expiry_date else ""
-            target_exp_digits = re.sub(r'\D', '', target_exp)
-            s_exp = fuzz.partial_token_set_ratio(target_exp, self._normalize_digits(text)) if target_exp else 100.0
-
-            if target_exp_digits:
-                digit_score = get_best_date_match(target_exp_digits, pure_digits_text)
-                if digit_score >= 85.0:
-                    s_exp = max(s_exp, 90.0)
-
-            s_reg = fuzz.partial_token_set_ratio(license_details.issuing_province.lower(), text) if license_details.issuing_province else 100.0
-
-            return s_name, s_id, s_dob, s_exp, s_reg
-
-        score_name, score_id, score_dob, score_exp, score_region = compute_scores(whole_raw_text)
-
-        threshold = 90.0
-
-        # PASS 2: Multi-Scale Upsampling WITHOUT Binarization (Saves blurred gradients)
-        if (personal_info.full_name and score_name < threshold) or \
-           (license_details.license_number and score_id < threshold) or \
-           (personal_info.date_of_birth and score_dob < threshold) or \
-           (license_details.license_expiry_date and score_exp < threshold):
+        # PASS 2: Multi-Scale Upsampling (If any field is below threshold)
+        if (name and score_name < threshold_name) or \
+           (dl_number and score_id < threshold_dl) or \
+           (dob and score_dob < threshold_dob) or \
+           (exp and score_exp < threshold_exp):
 
             from core.image_utils import upscale_and_sharpen
             upscaled = upscale_and_sharpen(img_bgr, scale=2.5)
             raw_texts_up = self.extract_text_lines(upscaled, apply_binarization=False)
-            whole_raw_text_up = " ".join(raw_texts_up).lower()
 
-            up_name, up_id, up_dob, up_exp, up_reg = compute_scores(whole_raw_text_up)
+            (up_name, m_up_name), (up_id, m_up_id), (up_dob, m_up_dob), (up_exp, m_up_exp), up_reg = compute_all_scores(raw_texts_up)
 
-            score_name = max(score_name, up_name)
-            score_id = max(score_id, up_id)
-            score_dob = max(score_dob, up_dob)
-            score_exp = max(score_exp, up_exp)
+            if up_name > score_name: score_name, matched_name = up_name, m_up_name
+            if up_id > score_id: score_id, matched_dl = up_id, m_up_id
+            if up_dob > score_dob: score_dob, matched_dob = up_dob, m_up_dob
+            if up_exp > score_exp: score_exp, matched_exp = up_exp, m_up_exp
             score_region = max(score_region, up_reg)
+            raw_texts.extend([l for l in raw_texts_up if l not in raw_texts])
 
-        # PASS 3: CLAHE Contrast Recovery (For extreme Glare/Low Contrast cases)
-        if (personal_info.date_of_birth and score_dob < threshold) or \
-           (license_details.license_expiry_date and score_exp < threshold):
+        # PASS 3: CLAHE Contrast Recovery
+        if (dob and score_dob < threshold_dob) or (exp and score_exp < threshold_exp) or (dl_number and score_id < threshold_dl):
             from core.image_utils import apply_clahe
             clahe_img = apply_clahe(img_bgr)
             raw_texts_clahe = self.extract_text_lines(clahe_img, apply_binarization=False)
-            whole_raw_text_clahe = " ".join(raw_texts_clahe).lower()
 
-            c_name, c_id, c_dob, c_exp, c_reg = compute_scores(whole_raw_text_clahe)
+            (c_name, m_c_name), (c_id, m_c_id), (c_dob, m_c_dob), (c_exp, m_c_exp), c_reg = compute_all_scores(raw_texts_clahe)
 
-            score_name = max(score_name, c_name)
-            score_id = max(score_id, c_id)
-            score_dob = max(score_dob, c_dob)
-            score_exp = max(score_exp, c_exp)
+            if c_name > score_name: score_name, matched_name = c_name, m_c_name
+            if c_id > score_id: score_id, matched_dl = c_id, m_c_id
+            if c_dob > score_dob: score_dob, matched_dob = c_dob, m_c_dob
+            if c_exp > score_exp: score_exp, matched_exp = c_exp, m_c_exp
             score_region = max(score_region, c_reg)
-
-        # PASS 4: Morphological Noise Eradication (Zero-RAM fallback)
-        if (personal_info.date_of_birth and score_dob < threshold) or \
-           (license_details.license_expiry_date and score_exp < threshold) or \
-           (license_details.license_number and score_id < threshold):
-
-            from core.image_utils import upscale_and_sharpen
-            up_img = upscale_and_sharpen(img_bgr, scale=2.0)
-            kernel = np.ones((2, 2), np.uint8)
-            morphed = cv2.morphologyEx(up_img, cv2.MORPH_CLOSE, kernel)
-
-            raw_texts_morph = self.extract_text_lines(morphed, apply_binarization=False)
-            whole_raw_text_morph = " ".join(raw_texts_morph).lower()
-
-            m_name, m_id, m_dob, m_exp, m_reg = compute_scores(whole_raw_text_morph)
-
-            score_name = max(score_name, m_name)
-            score_id = max(score_id, m_id)
-            score_dob = max(score_dob, m_dob)
-            score_exp = max(score_exp, m_exp)
-            score_region = max(score_region, m_reg)
+            raw_texts.extend([l for l in raw_texts_clahe if l not in raw_texts])
 
         missing_fields = []
-        name = personal_info.full_name.lower() if personal_info.full_name else ""
-        dl_number = license_details.license_number.lower() if license_details.license_number else ""
 
-        if name and score_name < threshold:
+        if name and score_name < threshold_name:
             missing_fields.append(f"Full Name ({score_name:.1f}%)")
-        if dl_number and score_id < threshold:
+        if dl_number and score_id < threshold_dl:
             missing_fields.append(f"License Number ({score_id:.1f}%)")
-        if personal_info.date_of_birth and score_dob < threshold:
+        if dob and score_dob < threshold_dob:
             missing_fields.append(f"Date of Birth ({score_dob:.1f}%)")
-        if license_details.license_expiry_date and score_exp < threshold:
+        if exp and score_exp < threshold_exp:
             missing_fields.append(f"Expiry Date ({score_exp:.1f}%)")
 
         passed = len(missing_fields) == 0
@@ -238,16 +331,16 @@ class DrivingLicenseOCREngine:
 
         return LicenseOcrResult(
             passed=passed,
-            extracted_dl_number=license_details.license_number if score_id >= threshold else None,
-            extracted_name=personal_info.full_name if score_name >= threshold else None,
-            extracted_dob=personal_info.date_of_birth if score_dob >= threshold else None,
-            extracted_expiry=license_details.license_expiry_date if score_exp >= threshold else None,
-            extracted_province=license_details.issuing_province if score_region >= threshold else None,
-            number_matched=(score_id >= threshold),
-            number_similarity=score_id / 100.0,
-            name_matched=(score_name >= threshold),
-            name_similarity=score_name / 100.0,
-            dob_matched=(score_dob >= threshold),
+            extracted_dl_number=matched_dl or license_details.license_number if score_id >= threshold_dl else None,
+            extracted_name=matched_name or personal_info.full_name if score_name >= threshold_name else None,
+            extracted_dob=matched_dob or personal_info.date_of_birth if score_dob >= threshold_dob else None,
+            extracted_expiry=matched_exp or license_details.license_expiry_date if score_exp >= threshold_exp else None,
+            extracted_province=license_details.issuing_province if score_region >= 75.0 else None,
+            number_matched=(score_id >= threshold_dl),
+            number_similarity=min(1.0, score_id / 100.0),
+            name_matched=(score_name >= threshold_name),
+            name_similarity=min(1.0, score_name / 100.0),
+            dob_matched=(score_dob >= threshold_dob),
             is_expired=False,
             driver_age_valid=True,
             confidence=1.0 if passed else 0.0,
@@ -260,3 +353,4 @@ class DrivingLicenseOCREngine:
 
 # Global instance
 dl_ocr_engine = DrivingLicenseOCREngine()
+

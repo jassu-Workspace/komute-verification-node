@@ -508,19 +508,25 @@
         request_id: "req_" + Date.now(),
         driver_id: "usr_" + Math.floor(Math.random()*10000),
         personal_info: {
-          full_name: document.getElementById('fullName').value,
-          date_of_birth: document.getElementById('dob').value
+          full_name: document.getElementById('fullName').value.trim(),
+          email_address: "driver@komute.com",
+          mobile_number: "+10000000000",
+          date_of_birth: document.getElementById('dob').value.trim(),
+          role: "Driver"
         },
         license_details: {
-          license_number: document.getElementById('dlNumber').value,
-          expiry_date: document.getElementById('expiryDate').value
+          license_number: document.getElementById('dlNumber').value.trim(),
+          issuing_province: "ON",
+          license_expiry_date: document.getElementById('expiryDate').value.trim(),
+          expiry_date: document.getElementById('expiryDate').value.trim()
         },
         vehicle_details: {
-          make: "Unknown", // Placeholder, since form doesn't collect
-          model: "Unknown", // Placeholder
-          year: 2020, // Placeholder
-          plate_number: document.getElementById('plateNumber').value,
-          color: document.getElementById('vehColor').value
+          make: "Standard",
+          model: "Vehicle",
+          year: "2022",
+          plate: document.getElementById('plateNumber').value.trim(),
+          plate_number: document.getElementById('plateNumber').value.trim(),
+          color: document.getElementById('vehColor').value.trim()
         },
         images: {
           selfie_base64: images.selfie,
@@ -528,6 +534,7 @@
           vehicle_photo_base64: images.vehicle
         }
       };
+
 
       const btn = document.getElementById('submitBtn');
       btn.disabled = true;
