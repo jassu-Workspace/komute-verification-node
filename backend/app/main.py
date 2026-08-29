@@ -68,12 +68,15 @@ def _get_frontend_path(filename: str) -> str:
 
 
 @app.get("/", response_class=HTMLResponse, tags=["Dashboard"], include_in_schema=False)
+@app.head("/", include_in_schema=False)
 @app.get("/dashboard", response_class=HTMLResponse, tags=["Dashboard"], include_in_schema=False)
+@app.head("/dashboard", include_in_schema=False)
 async def get_dashboard() -> HTMLResponse:
     """Serve the interactive driver verification and privacy audit dashboard."""
     path = _get_frontend_path("dashboard.html")
     with open(path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read(), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
 
 
 @app.get("/system", response_class=HTMLResponse, tags=["Telemetry"], include_in_schema=False)
