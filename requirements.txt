@@ -6,7 +6,9 @@ pydantic>=2.6.0
 pydantic-settings>=2.2.0
 python-dotenv>=1.0.0
 python-multipart>=0.0.9
+python-dateutil>=2.8.2
 psutil>=5.9.0
+
 
 # Computer Vision & Math (Headless for production / Render cloud environments)
 opencv-python-headless>=4.8.0

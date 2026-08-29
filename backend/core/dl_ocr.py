@@ -3,7 +3,6 @@ from typing import Any, Dict, List, Tuple, Optional
 import cv2
 import numpy as np
 from rapidfuzz import fuzz
-from dateutil import parser
 
 from app.schemas import LicenseDetails, LicenseOcrResult, PersonalInfo
 from core.image_utils import apply_adaptive_threshold, deskew_image, resize_image_max_dimension
