@@ -1,0 +1,36 @@
+# Python & Virtual Environments
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+env/
+ENV/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+test_results.txt
+
+# Environment variables & secrets
+.env.local
+
+# Storage & Uploads generated at runtime
+storage/uploads/drivers/*
+storage/uploads/previews/*
+backend/storage/uploads/drivers/*
+backend/storage/uploads/previews/*
+!storage/uploads/drivers/.gitkeep
+!storage/uploads/previews/.gitkeep
+
+# IDE & Editor artifacts
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+
+
+.env

@@ -1,0 +1,4 @@
+{
+  "tests/test_api_pipeline.py::test_full_verification_rejected_expired_license": true,
+  "tests/test_dl_ocr.py": true
+}

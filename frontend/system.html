@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Komüte Telemetry Hub</title>
+  <meta name="description" content="Deep system telemetry, multi-stage AI model inspector, and real-time mathematical confidence justification engine." />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #09090b;
+      --surface: #18181b;
+      --surface-elevated: #27272a;
+      --surface-hover: #27272a;
+      --border: rgba(255, 255, 255, 0.1);
+      --border-focus: #818cf8;
+      --text: #fafafa;
+      --text-muted: #a1a1aa;
+      --text-dim: #71717a;
+      --green: #34d399;
+      --green-bg: rgba(52, 211, 153, 0.1);
+      --red: #f87171;
+      --red-bg: rgba(248, 113, 113, 0.1);
+      --blue: #60a5fa;
+      --amber: #fbbf24;
+      --amber-bg: rgba(251, 191, 36, 0.1);
+      --cyan: #22d3ee;
+      --cyan-bg: rgba(34, 211, 238, 0.1);
+      --purple: #c084fc;
+      --purple-bg: rgba(192, 132, 252, 0.1);
+      --accent: #6366f1;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: var(--bg);
+      background-image: 
+        radial-gradient(circle at 15% 50%, rgba(99, 102, 241, 0.08), transparent 25%),
+        radial-gradient(circle at 85% 30%, rgba(59, 130, 246, 0.08), transparent 25%);
+      color: var(--text);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      line-height: 1.6;
+      font-size: 14px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container { max-width: 1400px; margin: 0 auto; padding: 2.5rem 2rem; }
+
+    header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 2.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--border);
+    }
+    .brand-section { display: flex; align-items: center; gap: 1.5rem; }
+    .brand { display: flex; align-items: center; gap: 1rem; text-decoration: none; color: var(--text); }
+    .brand-logo {
+      width: 36px; height: 36px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border-radius: 10px; display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 1.1rem; color: #fff;
+      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+    }
+    .brand-title { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.02em; }
+    .brand-subtitle { font-size: 0.8rem; color: var(--text-muted); }
+
+    .nav-links {
+      display: flex; gap: 0.5rem; background: rgba(255, 255, 255, 0.03);
+      padding: 0.35rem; border-radius: 10px; border: 1px solid var(--border);
+    }
+    .nav-link {
+      padding: 0.5rem 1rem; font-size: 0.85rem; font-weight: 500; color: var(--text-muted);
+      text-decoration: none; border-radius: 6px; transition: all 0.2s ease;
+    }
+    .nav-link:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+    .nav-link.active { color: #fff; background: var(--surface-elevated); box-shadow: 0 2px 8px rgba(0,0,0,0.2); border: 1px solid var(--border); }
+
+    .pulse-badge {
+      display: flex; align-items: center; gap: 0.5rem; font-size: 0.78rem; font-weight: 600;
+      padding: 0.35rem 0.75rem; border-radius: 9999px; background: var(--green-bg); color: var(--green); border: 1px solid rgba(52, 211, 153, 0.25);
+    }
+    .pulse-dot {
+      width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(52, 211, 153, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+    }
+
+    .btn {
+      padding: 0.5rem 1rem; font-size: 0.85rem; font-weight: 600; border-radius: 6px; cursor: pointer;
+      border: 1px solid var(--border); background: var(--surface-elevated); color: var(--text);
+      transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 0.4rem;
+    }
+    .btn:hover { background: var(--surface-hover); border-color: rgba(255, 255, 255, 0.2); }
+    
+    .view-tabs { display: flex; gap: 0.75rem; margin-bottom: 2rem; border-bottom: 1px solid var(--border); padding-bottom: 1rem; }
+    .tab-btn {
+      padding: 0.75rem 1.25rem; font-size: 0.9rem; font-weight: 600; color: var(--text-muted); background: transparent;
+      border: none; border-radius: 8px; cursor: pointer; transition: all 0.2s ease;
+    }
+    .tab-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.04); }
+    .tab-btn.active { color: #fff; background: var(--surface-elevated); border: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2); }
+    
+    .section-title { font-size: 1.15rem; font-weight: 700; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem; }
+    
+    /* Vitals */
+    .vitals-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; margin-bottom: 2.5rem; }
+    .vital-card {
+      background: rgba(24, 24, 27, 0.6); backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem;
+      position: relative; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.15); transition: transform 0.2s;
+    }
+    .vital-card:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.15); }
+    .vital-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, #6366f1, #a855f7); opacity: 0.9; }
+    .vital-label { font-size: 0.8rem; text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; color: var(--text-dim); margin-bottom: 0.5rem; }
+    .vital-value { font-size: 1.75rem; font-weight: 700; color: #fff; letter-spacing: -0.02em; margin-bottom: 0.5rem; }
+    .vital-subtext { font-size: 0.85rem; color: var(--text-muted); font-family: var(--font-mono); }
+
+    /* Models */
+    .models-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 1.25rem; margin-bottom: 2.5rem; }
+    .model-card {
+      background: rgba(24, 24, 27, 0.6); backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem;
+      display: flex; flex-direction: column; justify-content: space-between; gap: 1rem; transition: transform 0.2s;
+    }
+    .model-card:hover { border-color: rgba(255, 255, 255, 0.2); transform: translateY(-2px); }
+    .model-header { display: flex; justify-content: space-between; align-items: flex-start; }
+    .model-name { font-size: 1.05rem; font-weight: 700; color: #fff; }
+    .model-stage { font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; font-weight: 600; margin-top: 0.25rem; }
+    .model-badge { font-size: 0.75rem; font-weight: 700; padding: 0.3rem 0.6rem; border-radius: 6px; white-space: nowrap; background: var(--green-bg); color: var(--green); border: 1px solid rgba(52, 211, 153, 0.3); }
+
+    .model-body { background: rgba(0, 0, 0, 0.3); border-radius: 8px; padding: 1rem; border: 1px solid rgba(255, 255, 255, 0.05); font-size: 0.85rem; }
+    .model-row { display: flex; margin-bottom: 0.5rem; }
+    .model-row:last-child { margin-bottom: 0; }
+    .model-row-key { width: 120px; color: var(--text-dim); font-weight: 600; }
+    .model-row-val { color: var(--text-muted); font-family: var(--font-mono); }
+
+    .json-code-box { background: #000; border: 1px solid var(--border); border-radius: 8px; padding: 1rem; font-family: var(--font-mono); font-size: 0.85rem; color: #a5b4fc; overflow-x: auto; white-space: pre-wrap; box-shadow: inset 0 2px 10px rgba(0,0,0,0.5); }
+    
+    /* Telemetry Table */
+    .telemetry-table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.85rem; border-radius: 8px; overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(0, 0, 0, 0.2); }
+    .telemetry-table th { background: rgba(255, 255, 255, 0.03); text-align: left; padding: 0.85rem 1rem; color: var(--text-dim); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .telemetry-table td { padding: 0.85rem 1rem; border-top: 1px solid rgba(255, 255, 255, 0.05); color: var(--text); }
+    .telemetry-table tr.data-row { transition: background 0.2s; cursor: pointer; }
+    .telemetry-table tr.data-row:hover { background: rgba(255,255,255,0.04); }
+    .telemetry-table .decision-badge { padding: 0.25rem 0.6rem; border-radius: 4px; font-weight: 700; font-size: 0.75rem; }
+    .decision-badge.approved { background: var(--green-bg); color: var(--green); border: 1px solid rgba(52,211,153,0.3); }
+    .decision-badge.rejected { background: var(--red-bg); color: var(--red); border: 1px solid rgba(248,113,113,0.3); }
+    
+    .proof-row { display: none; background: rgba(0, 0, 0, 0.4); }
+    .proof-row.open { display: table-row; }
+    .proof-container { padding: 1.5rem; }
+    .proof-title { font-size: 0.9rem; font-weight: 600; color: var(--text); margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+
+    /* Object Tree Renderer */
+    .obj-tree { list-style: none; margin: 0; padding: 0; font-size: 0.85rem; }
+    .obj-tree ul { list-style: none; margin-left: 1rem; border-left: 1px solid rgba(255,255,255,0.1); padding-left: 0.75rem; margin-top: 0.35rem; margin-bottom: 0.35rem; }
+    .obj-tree li { margin-bottom: 0.35rem; }
+    .tree-k { color: var(--text-dim); font-weight: 600; font-family: var(--font-mono); margin-right: 0.5rem; }
+    .tree-v-str { color: #93c5fd; font-family: var(--font-mono); }
+    .tree-v-num { color: #fde047; font-family: var(--font-mono); }
+    .tree-v-bool-t { color: var(--green); font-weight: 700; font-family: var(--font-mono); }
+    .tree-v-bool-f { color: var(--red); font-weight: 700; font-family: var(--font-mono); }
+    .tree-v-null { color: var(--text-muted); font-style: italic; font-family: var(--font-mono); }
+    
+    .data-card { background: rgba(0, 0, 0, 0.2); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <div class="brand-section">
+        <a href="/dashboard" class="brand">
+          <div class="brand-logo">K</div>
+          <div>
+            <div class="brand-title">Komüte Telemetry Hub</div>
+            <div class="brand-subtitle">AI & CV Engine Matrix</div>
+          </div>
+        </a>
+        <div class="nav-links">
+          <a href="/dashboard" class="nav-link">Verifier Studio</a>
+          <a href="/system" class="nav-link active">System Telemetry</a>
+        </div>
+      </div>
+      <div style="display: flex; gap: 1rem; align-items: center;">
+        <button class="btn" onclick="runSelfTest()">⚙️ Run System Diagnostics</button>
+        <div class="pulse-badge"><span class="pulse-dot"></span> System Live</div>
+      </div>
+    </header>
+
+    <div class="view-tabs">
+      <button class="tab-btn active" onclick="switchTab('overview')">System Overview</button>
+      <button class="tab-btn" onclick="switchTab('sessions')">Session Explorer</button>
+    </div>
+
+    <!-- OVERVIEW TAB -->
+    <div id="overview-tab">
+      <div class="section-title">🌐 System Vitals</div>
+      <div class="vitals-grid" id="vitalsGrid">
+        <div style="color: var(--text-dim); padding: 1rem;">Loading vitals...</div>
+      </div>
+
+      <div class="section-title">🧠 Core AI / Computer Vision Models</div>
+      <div class="models-grid" id="modelsGrid"></div>
+      
+      <div class="section-title">📦 Loaded AI Libraries & Runtimes</div>
+      <div class="data-card" id="librariesBox">Loading...</div>
+    </div>
+
+    <!-- SESSIONS TAB -->
+    <div id="sessions-tab" style="display: none;">
+      <div class="section-title">🔎 Recent Verifications</div>
+      <div id="sessionsContainer">Loading sessions...</div>
+    </div>
+
+  </div>
+
+  <script>
+    const API_KEY = 'kmt_live_v2_f83jf98a2h4j90xj23';
+
+    function switchTab(tab) {
+      document.getElementById('overview-tab').style.display = tab === 'overview' ? 'block' : 'none';
+      document.getElementById('sessions-tab').style.display = tab === 'sessions' ? 'block' : 'none';
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+    }
+
+    function renderObjectTree(obj) {
+      if (obj === null) return `<span class="tree-v-null">null</span>`;
+      if (typeof obj === 'boolean') return obj ? `<span class="tree-v-bool-t">true</span>` : `<span class="tree-v-bool-f">false</span>`;
+      if (typeof obj === 'number') return `<span class="tree-v-num">${obj}</span>`;
+      if (typeof obj === 'string') return `<span class="tree-v-str">"${obj}"</span>`;
+      
+      let html = '<ul>';
+      for (let key in obj) {
+        html += `<li><span class="tree-k">${key}:</span>`;
+        if (typeof obj[key] === 'object' && obj[key] !== null) {
+          html += renderObjectTree(obj[key]);
+        } else {
+          html += renderObjectTree(obj[key]);
+        }
+        html += `</li>`;
+      }
+      html += '</ul>';
+      return html;
+    }
+
+    async function loadTelemetry() {
+      try {
+        const res = await fetch('/api/v1/telemetry/system', { headers: { 'X-API-Key': API_KEY }});
+        if (!res.ok) throw new Error("Unauthorized or server error");
+        const data = await res.json();
+        
+        // Render Vitals
+        const v = data.vitals;
+        document.getElementById('vitalsGrid').innerHTML = `
+          <div class="vital-card">
+            <div class="vital-label">Host OS</div>
+            <div class="vital-value">${v.runtime.os_platform || 'Linux'}</div>
+            <div class="vital-subtext">Python ${v.runtime.python_version}</div>
+          </div>
+          <div class="vital-card">
+            <div class="vital-label">System Memory</div>
+            <div class="vital-value">${v.runtime.memory_rss_mb ? v.runtime.memory_rss_mb.toFixed(1) : '0'} MB</div>
+            <div class="vital-subtext">Active Resident Set Size</div>
+          </div>
+          <div class="vital-card">
+            <div class="vital-label">Storage Utilization</div>
+            <div class="vital-value">${v.storage.total_stored_size_formatted}</div>
+            <div class="vital-subtext">${v.storage.total_stored_files} files stored (WebP Optimized)</div>
+          </div>
+        `;
+
+        // Render Models
+        document.getElementById('modelsGrid').innerHTML = data.ai_models.map(m => `
+          <div class="model-card">
+            <div class="model-header">
+              <div>
+                <div class="model-name">${m.name}</div>
+                <div class="model-stage">${m.category}</div>
+              </div>
+              <div class="model-badge">${m.ready ? 'ONLINE' : 'STANDBY'}</div>
+            </div>
+            <div class="model-body">
+              <div class="model-row"><div class="model-row-key">Architecture:</div><div class="model-row-val">${m.architecture}</div></div>
+              <div class="model-row"><div class="model-row-key">Model Path:</div><div class="model-row-val">${m.model_path}</div></div>
+              <div class="model-row"><div class="model-row-key">Output:</div><div class="model-row-val" style="color:var(--cyan)">${m.output}</div></div>
+            </div>
+          </div>
+        `).join('');
+
+        // Render Libraries
+        document.getElementById('librariesBox').innerHTML = `<div class="obj-tree">${renderObjectTree(data.libraries)}</div>`;
+
+        // Load Sessions
+        const sRes = await fetch('/api/v1/telemetry/sessions', { headers: { 'X-API-Key': API_KEY }});
+        if (sRes.ok) {
+          const sData = await sRes.json();
+          let html = `<table class="telemetry-table">
+            <thead>
+              <tr>
+                <th>Driver ID</th>
+                <th>Request ID</th>
+                <th>Timestamp</th>
+                <th>Verdict</th>
+                <th>Confidence Score</th>
+                <th>Latency</th>
+              </tr>
+            </thead>
+            <tbody>`;
+            
+          sData.sessions.forEach((s, idx) => {
+            const meta = s.custom_metadata || {};
+            const decision = meta.verification_decision || meta.decision || (meta.composite_proof && meta.composite_proof.final_decision) || 'UNKNOWN';
+            const badgeClass = decision === 'APPROVED' ? 'approved' : 'rejected';
+            const score = meta.composite_confidence !== undefined ? ((meta.composite_confidence)*100).toFixed(1) + '%' : 'N/A';
+            const latency = meta.execution_time_ms ? Math.round(meta.execution_time_ms) + 'ms' : '-';
+            const dateStr = new Date(s.created_at).toLocaleString();
+            
+            html += `
+              <tr class="data-row" onclick="toggleProof(${idx})">
+                <td style="font-family:var(--font-mono)">${s.driver_id}</td>
+                <td style="font-family:var(--font-mono); color:var(--text-dim)">${s.request_id}</td>
+                <td>${dateStr}</td>
+                <td><span class="decision-badge ${badgeClass}">${decision}</span></td>
+                <td style="font-family:var(--font-mono); font-weight:600; color:var(--accent)">${score}</td>
+                <td style="font-family:var(--font-mono)">${latency}</td>
+              </tr>
+              <tr id="proofRow_${idx}" class="proof-row">
+                <td colspan="6">
+                  <div class="proof-container">
+                    <div class="proof-title">📊 Mathematical Proof Matrix</div>
+                    <div class="data-card obj-tree">
+                      ${renderObjectTree(meta.composite_proof || meta)}
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            `;
+          });
+          
+          html += `</tbody></table>`;
+          document.getElementById('sessionsContainer').innerHTML = html;
+        }
+
+      } catch (e) {
+        document.getElementById('vitalsGrid').innerHTML = `<div style="color:var(--red)">Failed to load: ${e.message}</div>`;
+      }
+    }
+
+    async function runSelfTest() {
+      try {
+        const res = await fetch('/api/v1/telemetry/self-test', { method: 'POST', headers: { 'X-API-Key': API_KEY }});
+        const data = await res.json();
+        
+        let selfTestHtml = `
+          <div style="text-align:left; font-family:var(--font-sans);">
+            <h3 style="margin-bottom:1rem; color:var(--text);">Diagnostics Report</h3>
+            <div class="obj-tree data-card" style="max-height: 60vh; overflow-y: auto;">
+              ${renderObjectTree(data)}
+            </div>
+          </div>
+        `;
+        
+        // Quick modal overlay replacement for alert
+        const m = document.createElement('div');
+        m.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); backdrop-filter:blur(5px); z-index:9999; display:flex; align-items:center; justify-content:center; padding: 2rem;';
+        m.innerHTML = `
+          <div style="background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:2rem; width:100%; max-width:600px; box-shadow:0 10px 40px rgba(0,0,0,0.5);">
+            ${selfTestHtml}
+            <button class="btn" style="margin-top:1.5rem;" onclick="this.parentElement.parentElement.remove()">Close Diagnostics</button>
+          </div>
+        `;
+        document.body.appendChild(m);
+        
+      } catch (e) {
+        alert("Self Test Failed: " + e.message);
+      }
+    }
+
+    function toggleProof(idx) {
+      const row = document.getElementById('proofRow_' + idx);
+      if (row.classList.contains('open')) {
+        row.classList.remove('open');
+      } else {
+        document.querySelectorAll('.proof-row').forEach(r => r.classList.remove('open'));
+        row.classList.add('open');
+      }
+    }
+
+    // Initialize
+    loadTelemetry();
+  </script>
+</body>
+</html>

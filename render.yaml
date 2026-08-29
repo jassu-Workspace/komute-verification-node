@@ -1,0 +1,44 @@
+services:
+  # -------------------------------------------------------------
+  # Komüte Driver Verification Microservice (Render Web Service)
+  # -------------------------------------------------------------
+  - type: web
+    name: komute-driver-verifier
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: "./build.sh"
+    startCommand: "cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: ENVIRONMENT
+        value: production
+      - key: VLM_PROVIDER
+        value: gemini
+      - key: VLM_MODEL
+        value: gemini-2.5-flash
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: ENABLE_API_KEY_AUTH
+        value: "false"
+      - key: API_SECRET_KEY
+        generateValue: true
+      - key: FUZZY_NAME_THRESHOLD
+        value: "0.85"
+      - key: FUZZY_DL_THRESHOLD
+        value: "0.88"
+      - key: COMPOSITE_APPROVAL_THRESHOLD
+        value: "0.85"
+      - key: FACE_CROP_PADDING_RATIO
+        value: "0.15"
+      - key: RATE_LIMIT_PER_MINUTE
+        value: "60"
+      - key: OMP_NUM_THREADS
+        value: "2"
+      - key: ORT_INTRA_OP_NUM_THREADS
+        value: "2"
+      - key: ORT_INTER_OP_NUM_THREADS
+        value: "1"

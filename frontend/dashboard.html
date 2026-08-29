@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Komüte Verifier v2</title>
+  <meta name="description" content="Minimal driver identity verification and zero-PII biometrics platform." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #09090b;
+      --surface: #18181b;
+      --surface-elevated: #27272a;
+      --surface-hover: #27272a;
+      --border: rgba(255, 255, 255, 0.1);
+      --border-focus: #818cf8;
+      --text: #fafafa;
+      --text-muted: #a1a1aa;
+      --text-dim: #71717a;
+      --green: #34d399;
+      --green-bg: rgba(52, 211, 153, 0.1);
+      --red: #f87171;
+      --red-bg: rgba(248, 113, 113, 0.1);
+      --blue: #60a5fa;
+      --amber: #fbbf24;
+      --amber-bg: rgba(251, 191, 36, 0.1);
+      --cyan: #22d3ee;
+      --cyan-bg: rgba(34, 211, 238, 0.1);
+      --purple: #c084fc;
+      --purple-bg: rgba(192, 132, 252, 0.1);
+      --accent: #6366f1;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: var(--bg);
+      background-image: 
+        radial-gradient(circle at 15% 50%, rgba(99, 102, 241, 0.08), transparent 25%),
+        radial-gradient(circle at 85% 30%, rgba(59, 130, 246, 0.08), transparent 25%);
+      color: var(--text);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      line-height: 1.6;
+      font-size: 14px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container { max-width: 1280px; margin: 0 auto; padding: 2.5rem 2rem; }
+
+    header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 2.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--border);
+    }
+    .brand { display: flex; align-items: center; gap: 1rem; text-decoration: none; color: var(--text); }
+    .brand-section { display: flex; align-items: center; gap: 1.5rem; }
+    .brand-logo {
+      width: 36px; height: 36px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border-radius: 10px; display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 1.1rem; color: #fff;
+      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+    }
+    .brand-title { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.02em; }
+    .brand-subtitle { font-size: 0.8rem; color: var(--text-muted); }
+
+    .nav-links {
+      display: flex; gap: 0.5rem; background: rgba(255, 255, 255, 0.03);
+      padding: 0.35rem; border-radius: 10px; border: 1px solid var(--border);
+    }
+    .nav-link {
+      padding: 0.5rem 1rem; font-size: 0.85rem; font-weight: 500; color: var(--text-muted);
+      text-decoration: none; border-radius: 6px; transition: all 0.2s ease;
+    }
+    .nav-link:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+    .nav-link.active { color: #fff; background: var(--surface-elevated); box-shadow: 0 2px 8px rgba(0,0,0,0.2); border: 1px solid var(--border); }
+    
+    .status-pill {
+      font-size: 0.8rem; color: var(--text-muted); display: flex; align-items: center;
+      gap: 0.5rem; font-family: var(--font-mono); background: rgba(255,255,255,0.03);
+      padding: 0.4rem 0.8rem; border-radius: 999px; border: 1px solid var(--border);
+    }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
+
+    .pulse-badge {
+      display: flex; align-items: center; gap: 0.5rem; font-size: 0.78rem; font-weight: 600;
+      padding: 0.35rem 0.75rem; border-radius: 9999px; background: var(--green-bg); color: var(--green); border: 1px solid rgba(52, 211, 153, 0.25);
+    }
+    .pulse-dot {
+      width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(52, 211, 153, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+    }
+
+    .grid { display: grid; grid-template-columns: 480px 1fr; gap: 2rem; align-items: start; }
+    @media (max-width: 1024px) { .grid { grid-template-columns: 1fr; } }
+
+    .card {
+      background: rgba(24, 24, 27, 0.6); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border); border-radius: 16px; padding: 2rem;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2); transition: transform 0.3s ease;
+    }
+
+    .card-title {
+      font-size: 1.1rem; font-weight: 600; margin-bottom: 1.5rem; color: var(--text);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .card-title span { font-size: 0.8rem; color: var(--text-dim); font-weight: 400; }
+
+    .form-group { margin-bottom: 1.25rem; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    label { display: block; font-size: 0.8rem; font-weight: 500; color: var(--text-muted); margin-bottom: 0.5rem; }
+    input {
+      width: 100%; background: rgba(0, 0, 0, 0.2); border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px; padding: 0.65rem 0.85rem; color: var(--text); font-size: 0.9rem;
+      font-family: var(--font-sans); outline: none; transition: all 0.2s;
+    }
+    input:focus {
+      border-color: var(--border-focus); background: rgba(0, 0, 0, 0.4);
+      box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.15);
+    }
+    input::placeholder { color: var(--text-dim); }
+
+    .dropzone-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.85rem; margin: 1.5rem 0; }
+    .dropzone {
+      border: 1px dashed rgba(255, 255, 255, 0.15); border-radius: 10px; padding: 1.25rem 0.5rem;
+      text-align: center; cursor: pointer; position: relative; background: rgba(255, 255, 255, 0.02);
+      transition: all 0.25s ease; min-height: 120px; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+    }
+    .dropzone:hover { border-color: var(--accent); background: rgba(99, 102, 241, 0.05); transform: translateY(-2px); }
+    .dropzone input { position: absolute; width: 100%; height: 100%; top: 0; left: 0; opacity: 0; cursor: pointer; z-index: 10; }
+    .dropzone-icon { font-size: 1.5rem; margin-bottom: 0.5rem; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2)); }
+    .dropzone-label { font-size: 0.8rem; font-weight: 600; color: var(--text); }
+    .dropzone-hint { font-size: 0.7rem; color: var(--text-dim); margin-top: 0.35rem; }
+    .dropzone-thumb { max-width: 100%; max-height: 80px; border-radius: 6px; margin-top: 0.5rem; display: none; object-fit: cover; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+
+    .btn {
+      width: 100%; background: linear-gradient(135deg, #6366f1, #4f46e5); color: #fff;
+      border: none; border-radius: 8px; padding: 0.85rem 1rem; font-size: 0.95rem;
+      font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center;
+      gap: 0.5rem; transition: all 0.2s ease; box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);
+    }
+    .btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4); filter: brightness(1.1); }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
+    
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border);
+      color: var(--text-muted); padding: 0.4rem 0.75rem; font-size: 0.8rem;
+      border-radius: 6px; cursor: pointer; width: auto; transition: all 0.2s;
+    }
+    .btn-secondary:hover { color: var(--text); border-color: rgba(255, 255, 255, 0.2); background: rgba(255, 255, 255, 0.08); }
+
+    .result-empty { text-align: center; padding: 5rem 1.5rem; color: var(--text-dim); font-size: 0.95rem; }
+    .outcome-header {
+      display: flex; justify-content: space-between; align-items: center; padding: 1.25rem 1.5rem;
+      border-radius: 10px; margin-bottom: 1.5rem; box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+    }
+    .outcome-approved { background: linear-gradient(135deg, rgba(52, 211, 153, 0.1), rgba(16, 185, 129, 0.05)); border: 1px solid rgba(52, 211, 153, 0.2); }
+    .outcome-rejected { background: linear-gradient(135deg, rgba(248, 113, 113, 0.1), rgba(239, 68, 68, 0.05)); border: 1px solid rgba(248, 113, 113, 0.2); }
+    .outcome-status { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.01em; }
+    .outcome-approved .outcome-status { color: var(--green); text-shadow: 0 0 12px rgba(52, 211, 153, 0.3); }
+    .outcome-rejected .outcome-status { color: var(--red); text-shadow: 0 0 12px rgba(248, 113, 113, 0.3); }
+    .outcome-sub { font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem; }
+    .outcome-score { text-align: right; }
+    .outcome-score-val { font-size: 1.75rem; font-weight: 700; font-family: var(--font-mono); letter-spacing: -0.02em; }
+    .outcome-score-lbl { font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; }
+
+    .stage-item {
+      border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; margin-bottom: 1rem;
+      background: rgba(255, 255, 255, 0.015); transition: background 0.3s, border-color 0.3s;
+    }
+    .stage-item:hover { background: rgba(255, 255, 255, 0.03); border-color: rgba(255, 255, 255, 0.1); }
+    .stage-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
+    .stage-title { font-size: 0.95rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; }
+    .badge { font-size: 0.75rem; font-weight: 700; padding: 0.25rem 0.6rem; border-radius: 6px; }
+    .badge-pass { background: var(--green-bg); color: var(--green); border: 1px solid rgba(52,211,153,0.2); }
+    .badge-fail { background: var(--red-bg); color: var(--red); border: 1px solid rgba(248,113,113,0.2); }
+
+    .stage-kv {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem;
+      font-size: 0.8rem; margin-top: 0.85rem; padding-top: 0.85rem; border-top: 1px solid var(--border);
+    }
+    .kv-k { color: var(--text-dim); font-weight: 500; }
+    .kv-v { font-weight: 600; color: var(--text); font-family: var(--font-mono); }
+
+    .previews-row {
+      display: flex; gap: 1rem; align-items: center; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);
+    }
+    .preview-box {
+      width: 80px; height: 80px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);
+      overflow: hidden; background: #000; flex-shrink: 0; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    .preview-box img { width: 100%; height: 100%; object-fit: cover; }
+    .preview-desc { font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; }
+
+    .compare-table {
+      width: 100%; border-collapse: collapse; margin-top: 1rem;
+      font-size: 0.85rem; border-radius: 8px; overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(0, 0, 0, 0.2);
+    }
+    .compare-table th {
+      background: rgba(255, 255, 255, 0.03); text-align: left; padding: 0.6rem 1rem;
+      color: var(--text-dim); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.75rem;
+    }
+    .compare-table td {
+      padding: 0.75rem 1rem; border-top: 1px solid rgba(255, 255, 255, 0.05);
+      font-family: var(--font-mono); color: var(--text);
+    }
+    .compare-table tr:hover td { background: rgba(255,255,255,0.02); }
+    .compare-table td.mismatch { color: #fca5a5; }
+    .compare-table td.match { color: #86efac; }
+
+    .reasons-banner {
+      background: var(--red-bg); border: 1px solid rgba(248, 113, 113, 0.25); border-radius: 8px;
+      padding: 1rem 1.25rem; font-size: 0.85rem; color: #fca5a5; margin-bottom: 1.25rem;
+    }
+    .reasons-banner ul { margin-left: 1.5rem; margin-top: 0.5rem; }
+
+    .details-toggle { margin-top: 1.25rem; }
+    .toggle-btn {
+      background: transparent; border: none; color: var(--text-dim); font-size: 0.85rem; font-weight: 500;
+      cursor: pointer; display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; transition: color 0.2s;
+    }
+    .toggle-btn:hover { color: var(--text); }
+    .raw-box {
+      display: none; background: rgba(0, 0, 0, 0.3); border: 1px solid var(--border); border-radius: 8px;
+      padding: 1.5rem; max-height: 400px; overflow: auto; margin-top: 0.75rem;
+      box-shadow: inset 0 2px 8px rgba(0,0,0,0.5);
+    }
+
+    /* Object Tree Renderer */
+    .obj-tree { list-style: none; margin: 0; padding: 0; font-size: 0.85rem; }
+    .obj-tree ul { list-style: none; margin-left: 1rem; border-left: 1px solid rgba(255,255,255,0.1); padding-left: 0.75rem; margin-top: 0.35rem; margin-bottom: 0.35rem; }
+    .obj-tree li { margin-bottom: 0.35rem; }
+    .tree-k { color: var(--text-dim); font-weight: 600; font-family: var(--font-mono); margin-right: 0.5rem; }
+    .tree-v-str { color: #93c5fd; font-family: var(--font-mono); }
+    .tree-v-num { color: #fde047; font-family: var(--font-mono); }
+    .tree-v-bool-t { color: var(--green); font-weight: 700; font-family: var(--font-mono); }
+    .tree-v-bool-f { color: var(--red); font-weight: 700; font-family: var(--font-mono); }
+    .tree-v-null { color: var(--text-muted); font-style: italic; font-family: var(--font-mono); }
+
+    .spinner {
+      width: 16px; height: 16px; border: 2px solid rgba(255, 255, 255, 0.2);
+      border-top: 2px solid #fff; border-radius: 50%; animation: spin 0.6s linear infinite;
+    }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand-section">
+        <a href="/dashboard" class="brand">
+          <div class="brand-logo">K</div>
+          <div>
+            <div class="brand-title">Komüte Verifier v2</div>
+            <div class="brand-subtitle">Production Biometrics Microservice</div>
+          </div>
+        </a>
+        <div class="nav-links">
+          <a href="/dashboard" class="nav-link active">Verifier Studio</a>
+          <a href="/system" class="nav-link">System Telemetry</a>
+        </div>
+      </div>
+      <div class="status-pill">
+        <span class="status-dot"></span> Service Active
+      </div>
+    </header>
+
+    <div class="grid">
+      <!-- Left: Minimal Input Card -->
+      <div class="card">
+        <div class="card-title">
+          Driver Credentials
+          <button type="button" class="btn-secondary" onclick="clearForm()">Reset</button>
+        </div>
+
+        <form id="verifyForm" onsubmit="handleVerify(event)">
+          <div class="form-group">
+            <label for="fullName">Full Legal Name</label>
+            <input type="text" id="fullName" placeholder="e.g. Jaswanth Reddy" required />
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="dob">Date of Birth</label>
+              <input type="date" id="dob" required />
+            </div>
+            <div class="form-group">
+              <label for="dlNumber">License Number</label>
+              <input type="text" id="dlNumber" placeholder="e.g. DL-0420110012345" required />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="expiryDate">License Expiry</label>
+              <input type="date" id="expiryDate" required />
+            </div>
+            <div class="form-group">
+              <label for="plateNumber">Plate Number</label>
+              <input type="text" id="plateNumber" placeholder="e.g. DL 7CQ 1939" required />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="vehColor">Vehicle Exterior Color</label>
+            <input type="text" id="vehColor" placeholder="e.g. White, Black, Red" required />
+          </div>
+
+          <!-- Image Dropzones -->
+          <div class="dropzone-grid">
+            <label class="dropzone" id="selfieZone" for="selfieInput">
+              <input type="file" id="selfieInput" accept="image/*" onchange="onFileSelected('selfieInput', 'selfieThumb', 'selfieLabel', 'selfie')" />
+              <div class="dropzone-icon">🤳</div>
+              <div class="dropzone-label">Live Selfie</div>
+              <div class="dropzone-hint" id="selfieLabel">Upload</div>
+              <img id="selfieThumb" class="dropzone-thumb" alt="Selfie" />
+            </label>
+
+            <label class="dropzone" id="dlZone" for="dlInput">
+              <input type="file" id="dlInput" accept="image/*" onchange="onFileSelected('dlInput', 'dlThumb', 'dlLabel', 'dl')" />
+              <div class="dropzone-icon">🪪</div>
+              <div class="dropzone-label">License Card</div>
+              <div class="dropzone-hint" id="dlLabel">Upload</div>
+              <img id="dlThumb" class="dropzone-thumb" alt="License" />
+            </label>
+
+            <label class="dropzone" id="vehZone" for="vehInput">
+              <input type="file" id="vehInput" accept="image/*" onchange="onFileSelected('vehInput', 'vehThumb', 'vehLabel', 'vehicle')" />
+              <div class="dropzone-icon">🚗</div>
+              <div class="dropzone-label">Vehicle Photo</div>
+              <div class="dropzone-hint" id="vehLabel">Upload</div>
+              <img id="vehThumb" class="dropzone-thumb" alt="Vehicle" />
+            </label>
+          </div>
+
+          <button type="submit" id="submitBtn" class="btn">
+            <span>Verify Driver</span>
+          </button>
+        </form>
+      </div>
+
+      <!-- Right: Minimal Results Card -->
+      <div class="card" id="resultsCard">
+        <div class="card-title">
+          Verification Result
+          <span id="latencySpan"></span>
+        </div>
+
+        <div id="emptyState" class="result-empty">
+          Upload documents and submit to run verification.
+        </div>
+
+        <div id="resultContent" style="display: none;">
+          <!-- Outcome Header -->
+          <div id="outcomeBanner" class="outcome-header outcome-approved">
+            <div>
+              <div id="outcomeStatus" class="outcome-status">APPROVED</div>
+              <div id="outcomeSub" class="outcome-sub">All verification gates passed</div>
+            </div>
+            <div class="outcome-score">
+              <div class="outcome-score-lbl">Match Score</div>
+              <div id="compositeScore" class="outcome-score-val">0.0%</div>
+            </div>
+          </div>
+
+          <!-- Rejections if any -->
+          <div id="reasonsBanner" class="reasons-banner" style="display: none;">
+            <strong>Issues Found:</strong>
+            <ul id="reasonsList"></ul>
+          </div>
+
+          <!-- Stage 1: License OCR -->
+          <div class="stage-item">
+            <div class="stage-top">
+              <div class="stage-title">🪪 License OCR & Credential Match</div>
+              <span id="s1Badge" class="badge badge-pass">PASS</span>
+            </div>
+            <div id="s1TableContainer"></div>
+          </div>
+
+          <!-- Stage 2: Face Biometrics -->
+          <div class="stage-item">
+            <div class="stage-top">
+              <div class="stage-title">👤 Face Biometrics & Zero-PII Crop</div>
+              <span id="s2Badge" class="badge badge-pass">PASS</span>
+            </div>
+            <div id="s2TableContainer"></div>
+            <div class="previews-row">
+              <div class="preview-box"><img id="selfieCrop" alt="Live Selfie Preview" /></div>
+              <div class="preview-box"><img id="dlCrop" alt="DL Crop Preview" /></div>
+              <div class="preview-desc" id="s2Desc">
+                Isolated driver portrait securely cross-matched against live selfie. (Zero-PII leakage)
+              </div>
+            </div>
+          </div>
+
+          <!-- Stage 3: Vehicle ALPR -->
+          <div class="stage-item">
+            <div class="stage-top">
+              <div class="stage-title">🚗 Vehicle & Plate Verification</div>
+              <span id="s3Badge" class="badge badge-pass">PASS</span>
+            </div>
+            <div id="s3TableContainer"></div>
+          </div>
+
+          <!-- Raw Toggle -->
+          <div class="details-toggle">
+            <button type="button" class="toggle-btn" onclick="toggleRaw()">
+              <span id="toggleArrow">▸</span> Show Raw Response Data
+            </button>
+            <div id="rawBox" class="raw-box"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const images = { selfie: null, dl: null, vehicle: null };
+
+    function processAndResizeImage(file, callback) {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width, height = img.height;
+          const maxDim = 1024;
+          if (width > height && width > maxDim) { height *= maxDim / width; width = maxDim; }
+          else if (height > maxDim) { width *= maxDim / height; height = maxDim; }
+          canvas.width = Math.round(width); canvas.height = Math.round(height);
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          callback(canvas.toDataURL('image/jpeg', 0.8));
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function onFileSelected(inputId, thumbId, labelId, key) {
+      const file = document.getElementById(inputId).files[0];
+      if (!file) return;
+      document.getElementById(labelId).innerText = 'Processing...';
+      processAndResizeImage(file, (base64Url) => {
+        document.getElementById(thumbId).src = base64Url;
+        document.getElementById(thumbId).style.display = 'block';
+        document.getElementById(labelId).innerText = 'Selected';
+        images[key] = base64Url;
+      });
+    }
+
+    function clearForm() {
+      document.getElementById('verifyForm').reset();
+      ['selfieThumb','dlThumb','vehThumb'].forEach(id => { document.getElementById(id).style.display = 'none'; document.getElementById(id).src = ''; });
+      ['selfieLabel','dlLabel','vehLabel'].forEach(id => { document.getElementById(id).innerText = 'Upload'; });
+      for(let k in images) images[k] = null;
+      document.getElementById('emptyState').style.display = 'block';
+      document.getElementById('resultContent').style.display = 'none';
+      document.getElementById('latencySpan').innerText = '';
+    }
+
+    function renderObjectTree(obj) {
+      if (obj === null) return `<span class="tree-v-null">null</span>`;
+      if (typeof obj === 'boolean') return obj ? `<span class="tree-v-bool-t">true</span>` : `<span class="tree-v-bool-f">false</span>`;
+      if (typeof obj === 'number') return `<span class="tree-v-num">${obj}</span>`;
+      if (typeof obj === 'string') return `<span class="tree-v-str">"${obj}"</span>`;
+      
+      let html = '<ul>';
+      for (let key in obj) {
+        html += `<li><span class="tree-k">${key}:</span>`;
+        if (typeof obj[key] === 'object' && obj[key] !== null) {
+          html += renderObjectTree(obj[key]);
+        } else {
+          html += renderObjectTree(obj[key]);
+        }
+        html += `</li>`;
+      }
+      html += '</ul>';
+      return html;
+    }
+
+    function toggleRaw() {
+      const box = document.getElementById('rawBox');
+      const arrow = document.getElementById('toggleArrow');
+      if (box.style.display === 'none' || !box.style.display) { box.style.display = 'block'; arrow.innerText = '▾'; }
+      else { box.style.display = 'none'; arrow.innerText = '▸'; }
+    }
+
+    async function handleVerify(e) {
+      e.preventDefault();
+      if (!images.selfie || !images.dl || !images.vehicle) {
+        alert("Please upload all three images (Selfie, DL, Vehicle)."); return;
+      }
+      
+      const payload = {
+        request_id: "req_" + Date.now(),
+        driver_id: "usr_" + Math.floor(Math.random()*10000),
+        personal_info: {
+          full_name: document.getElementById('fullName').value,
+          date_of_birth: document.getElementById('dob').value
+        },
+        license_details: {
+          license_number: document.getElementById('dlNumber').value,
+          expiry_date: document.getElementById('expiryDate').value
+        },
+        vehicle_details: {
+          make: "Unknown", // Placeholder, since form doesn't collect
+          model: "Unknown", // Placeholder
+          year: 2020, // Placeholder
+          plate_number: document.getElementById('plateNumber').value,
+          color: document.getElementById('vehColor').value
+        },
+        images: {
+          selfie_base64: images.selfie,
+          license_image_base64: images.dl,
+          vehicle_photo_base64: images.vehicle
+        }
+      };
+
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner"></div> Verifying...';
+      document.getElementById('emptyState').style.display = 'none';
+
+      try {
+        const response = await fetch('/api/v1/verify', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'X-API-Key': 'kmt_live_v2_f83jf98a2h4j90xj23'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(()=>({}));
+          throw new Error(errData.detail || `Server Error ${response.status}`);
+        }
+
+        const data = await response.json();
+        
+        // Update UI with response data
+        const banner = document.getElementById('outcomeBanner');
+        const statusEl = document.getElementById('outcomeStatus');
+        
+        if (data.decision === 'APPROVED') {
+          banner.className = 'outcome-header outcome-approved';
+          statusEl.innerText = 'APPROVED';
+          document.getElementById('outcomeSub').innerText = 'All verification gates passed';
+          document.getElementById('reasonsBanner').style.display = 'none';
+        } else {
+          banner.className = 'outcome-header outcome-rejected';
+          statusEl.innerText = 'REJECTED';
+          document.getElementById('outcomeSub').innerText = 'Verification requirements not met';
+          document.getElementById('reasonsBanner').style.display = 'block';
+          const rList = document.getElementById('reasonsList');
+          rList.innerHTML = (data.rejection_reasons || []).map(r => `<li>${r}</li>`).join('');
+        }
+
+        document.getElementById('compositeScore').innerText = ((data.composite_confidence || 0)*100).toFixed(1) + '%';
+        document.getElementById('latencySpan').innerText = data.execution_time_ms ? `~${Math.round(data.execution_time_ms)}ms` : '';
+
+        // Stage 1
+        const s1 = data.stages.license_ocr;
+        document.getElementById('s1Badge').className = s1.passed ? 'badge badge-pass' : 'badge badge-fail';
+        document.getElementById('s1Badge').innerText = s1.passed ? 'PASS' : 'FAIL';
+        
+        let s1Table = `<table class="compare-table">
+          <thead><tr><th>Field</th><th>Entered (Expected)</th><th>Extracted (Found)</th><th>Match</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Full Name</td>
+              <td>${payload.personal_info.full_name || 'N/A'}</td>
+              <td>${s1.extracted_name || 'Not detected'}</td>
+              <td class="${s1.name_matched ? 'match' : 'mismatch'}">${s1.name_matched ? '✓ Yes' : '✗ No'} (${(s1.name_similarity*100).toFixed(1)}%)</td>
+            </tr>
+            <tr>
+              <td>DL Number</td>
+              <td>${payload.license_details.license_number || 'N/A'}</td>
+              <td>${s1.extracted_dl_number || 'Not detected'}</td>
+              <td class="${s1.number_matched ? 'match' : 'mismatch'}">${s1.number_matched ? '✓ Yes' : '✗ No'} (${(s1.number_similarity*100).toFixed(1)}%)</td>
+            </tr>
+            <tr>
+              <td>Date of Birth</td>
+              <td>${payload.personal_info.date_of_birth || 'N/A'}</td>
+              <td>${s1.extracted_dob || 'Not detected'}</td>
+              <td class="${s1.dob_matched ? 'match' : 'mismatch'}">${s1.dob_matched ? '✓ Yes' : '✗ No'}</td>
+            </tr>
+          </tbody>
+        </table>`;
+        let rawOcrHtml = '';
+        if (s1.raw_ocr_lines && s1.raw_ocr_lines.length > 0) {
+            rawOcrHtml = `
+            <div style="margin-top: 15px; padding: 12px; background: rgba(0,0,0,0.25); border-radius: 6px; border: 1px solid rgba(255,255,255,0.05);">
+              <div style="font-size: 0.8rem; color: #888; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px;">Raw Extracted Text (DL OCR)</div>
+              <div style="font-family: monospace; font-size: 0.85rem; color: #ddd; line-height: 1.5;">${s1.raw_ocr_lines.join('<br>')}</div>
+            </div>`;
+        }
+        document.getElementById('s1TableContainer').innerHTML = s1Table + rawOcrHtml;
+
+        // Stage 2
+        const s2 = data.stages.face_biometrics;
+        document.getElementById('s2Badge').className = s2.passed ? 'badge badge-pass' : 'badge badge-fail';
+        document.getElementById('s2Badge').innerText = s2.passed ? 'PASS' : 'FAIL';
+        
+        let s2Table = `<table class="compare-table">
+          <thead><tr><th>Biometric Metric</th><th>Status</th><th>Confidence / Detail</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Facial Geometry Match</td>
+              <td class="${s2.is_match ? 'match' : 'mismatch'}">${s2.is_match ? '✓ Confirmed' : '✗ Mismatch'}</td>
+              <td>${(s2.vlm_confidence*100).toFixed(1)}%</td>
+            </tr>
+            <tr>
+              <td>Liveness / Anti-Spoof</td>
+              <td class="${s2.is_live ? 'match' : 'mismatch'}">${s2.is_live ? '✓ Live Human' : '✗ Spoof Detected'}</td>
+              <td>${s2.is_live ? 'No digital artifacts' : 'Failed'}</td>
+            </tr>
+            <tr>
+              <td>Age Delta</td>
+              <td class="match">✓ Valid</td>
+              <td>${s2.estimated_age_delta_years !== null ? s2.estimated_age_delta_years + ' years apart' : 'N/A'}</td>
+            </tr>
+          </tbody>
+        </table>`;
+        document.getElementById('s2TableContainer').innerHTML = s2Table;
+
+        // Handle Image Previews natively using Base64 from backend
+        const selfiePreviewEl = document.getElementById('selfieCrop');
+        const dlPreviewEl = document.getElementById('dlCrop');
+        if (s2.selfie_face_crop_preview) {
+            selfiePreviewEl.src = s2.selfie_face_crop_preview;
+        } else {
+            selfiePreviewEl.src = "";
+        }
+        
+        if (s2.dl_face_crop_preview) {
+            dlPreviewEl.src = s2.dl_face_crop_preview;
+        } else {
+            dlPreviewEl.src = "";
+        }
+
+        // Stage 3
+        const s3 = data.stages.vehicle_verification;
+        document.getElementById('s3Badge').className = s3.passed ? 'badge badge-pass' : 'badge badge-fail';
+        document.getElementById('s3Badge').innerText = s3.passed ? 'PASS' : 'FAIL';
+        
+        let s3Table = `<table class="compare-table">
+          <thead><tr><th>Field</th><th>Entered (Expected)</th><th>Extracted (Found)</th><th>Match</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>License Plate</td>
+              <td>${payload.vehicle_details.plate_number || 'N/A'}</td>
+              <td>${s3.extracted_plate || 'Not detected'}</td>
+              <td class="${s3.plate_matched ? 'match' : 'mismatch'}">${s3.plate_matched ? '✓ Yes' : '✗ No'} (${(s3.plate_similarity*100).toFixed(1)}%)</td>
+            </tr>
+            <tr>
+              <td>Vehicle Color</td>
+              <td>${payload.vehicle_details.color || 'N/A'}</td>
+              <td>${s3.detected_color || 'Unknown'}</td>
+              <td class="${s3.color_matched ? 'match' : 'mismatch'}">${s3.color_matched ? '✓ Yes' : '✗ No'}</td>
+            </tr>
+          </tbody>
+        </table>`;
+        let s3RawOcrHtml = '';
+        if (s3.raw_ocr_lines && s3.raw_ocr_lines.length > 0) {
+            s3RawOcrHtml = `
+            <div style="margin-top: 15px; padding: 12px; background: rgba(0,0,0,0.25); border-radius: 6px; border: 1px solid rgba(255,255,255,0.05);">
+              <div style="font-size: 0.8rem; color: #888; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px;">Raw Extracted Text (ALPR OCR)</div>
+              <div style="font-family: monospace; font-size: 0.85rem; color: #ddd; line-height: 1.5;">${s3.raw_ocr_lines.join('<br>')}</div>
+            </div>`;
+        }
+        document.getElementById('s3TableContainer').innerHTML = s3Table + s3RawOcrHtml;
+
+        document.getElementById('rawBox').innerHTML = `<div class="obj-tree">${renderObjectTree(data)}</div>`;
+        document.getElementById('resultContent').style.display = 'block';
+
+      } catch (err) {
+        alert("Verification Error: " + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span>Verify Driver</span>';
+      }
+    }
+  </script>
+</body>
+</html>
