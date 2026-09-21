@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import time
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any, Optional
 from app.config import settings
 from app.schemas import (
     DecisionEnum,
@@ -29,16 +29,19 @@ class VerificationPipeline:
     Executes License OCR, Zero-PII Face Biometrics, and Vehicle ALPR with memory-safe execution.
     """
 
-    async def execute_verification(self, request: VerificationRequest) -> VerificationResponse:
+    async def execute_verification(
+        self,
+        request: VerificationRequest,
+        background_tasks: Optional[Any] = None,
+    ) -> VerificationResponse:
         """
-        Run end-to-end multi-stage identity & vehicle verification.
+        Run end-to-end multi-stage identity & vehicle verification with memory-safe execution.
         """
         start_time = time.perf_counter()
         logger.info(f"Starting verification pipeline for request_id: {request.request_id}, driver_id: {request.driver_id}")
 
         # 1. Image Decoding & Preprocessing
-        # NOTE (ponytail: keep license image uncompressed during verification to prevent OCR quality degradation)
-        # License image is preserved at 100% native resolution for Stage 1 OCR and Face Cropper.
+        # NOTE: License image is flattened and preserved for Stage 1 OCR and Face Cropper.
         try:
             raw_dl_img = decode_base64_to_image(request.images.license_image_base64)
             raw_selfie_img = decode_base64_to_image(request.images.selfie_base64)
@@ -47,7 +50,7 @@ class VerificationPipeline:
             from core.image_utils import flatten_id_card
             raw_dl_img = flatten_id_card(raw_dl_img)
 
-            # Uncompressed original DL image used for all verification stages
+            # Pre-flattened DL image used for downstream verification
             dl_img = raw_dl_img
 
             selfie_img, _ = compress_and_normalize_base64(
@@ -90,12 +93,21 @@ class VerificationPipeline:
             )
 
         # 2. Stage 2A: Privacy Face Isolation (Zero-PII Cropping with YuNet Landmark Verification Layer)
-        # Extract driver face ONLY from DL card using uncompressed native resolution
+        # Extract driver face ONLY from DL card using native resolution
         dl_face_crop, dl_bbox, dl_sanitized = await asyncio.to_thread(
             face_privacy_cropper.extract_isolated_face,
             img_bgr=dl_img,
             margin_ratio=settings.face_crop_padding_ratio,
         )
+
+        # Zero-PII Selfie Isolation: Crop selfie face to exclude private room/background scenes before cloud transmission
+        selfie_face_crop, selfie_bbox, _ = await asyncio.to_thread(
+            face_privacy_cropper.extract_isolated_face,
+            img_bgr=selfie_img,
+            margin_ratio=settings.face_crop_padding_ratio,
+        )
+        if selfie_face_crop is None:
+            selfie_face_crop = selfie_img
 
         # Concurrently execute Stage 1 (DL OCR), Stage 2B (Cloud VLM Biometrics), and Stage 3 (Vehicle ALPR)
         stage1_task = asyncio.to_thread(
@@ -103,10 +115,11 @@ class VerificationPipeline:
             img_bgr=dl_img,
             personal_info=request.personal_info,
             license_details=request.license_details,
+            is_preflattened=True,
         )
 
         stage2_task = vlm_face_verifier.verify_biometrics(
-            selfie_crop_bgr=selfie_img,
+            selfie_crop_bgr=selfie_face_crop,
             dl_face_crop_bgr=dl_face_crop,
         )
 
@@ -117,10 +130,9 @@ class VerificationPipeline:
             return_crop=True,
         )
 
-        stage1_res, stage2_res, stage3_output = await asyncio.gather(
-            stage1_task,
-            stage2_task,
-            stage3_task,
+        stage1_res, stage2_res, stage3_output = await asyncio.wait_for(
+            asyncio.gather(stage1_task, stage2_task, stage3_task),
+            timeout=20.0,
         )
 
         # Unpack Stage 3 output (vehicle verification result + cropped license plate)
@@ -137,8 +149,7 @@ class VerificationPipeline:
             s3=stage3_res,
         )
 
-        # 4. Post-Verification Conditional Compression
-        # Compress license image ONLY if verification succeeded (APPROVED)
+        # 4. Post-Decision Image Compression
         compressed_images_dict = {
             "selfie": selfie_img,
             "vehicle": vehicle_img,
@@ -146,11 +157,12 @@ class VerificationPipeline:
 
         if decision == DecisionEnum.APPROVED:
             try:
+                from core.image_utils import compress_and_normalize_base64
                 compressed_dl_img, _ = compress_and_normalize_base64(
                     request.images.license_image_base64,
                     out_format="webp",
-                    max_dim=1400,
-                    quality=70,
+                    max_dim=1200,
+                    quality=80,
                 )
                 compressed_images_dict["license"] = compressed_dl_img
                 logger.info(f"Verification APPROVED: compressed license image to WebP for archival.")
@@ -160,38 +172,44 @@ class VerificationPipeline:
             logger.info("Verification REJECTED: license image compression skipped as requested.")
 
         # 5. Persist original, compressed, and cropped images into structured uploads folders
+        storage_kwargs = {
+            "driver_id": request.driver_id,
+            "request_id": request.request_id,
+            "original_images": {
+                "selfie": raw_selfie_img,
+                "license": raw_dl_img,
+                "vehicle": raw_vehicle_img,
+            },
+            "compressed_images": compressed_images_dict,
+            "cropped_images": {
+                "dl_face": dl_face_crop,
+                "vehicle_plate": plate_crop,
+            },
+            "metadata": {
+                "driver_name": request.personal_info.full_name,
+                "license_number": request.license_details.license_number,
+                "vehicle_plate": request.vehicle_details.plate,
+                "verification_decision": decision.value,
+                "composite_confidence": composite_score,
+                "rejection_reasons": rejection_reasons,
+                "stages": {
+                    "license_ocr": stage1_res.model_dump(),
+                    "face_biometrics": stage2_res.model_dump(),
+                    "vehicle_verification": stage3_res.model_dump(),
+                },
+                "composite_proof": composite_proof,
+            },
+        }
+
         saved_storage_data = None
         try:
-            saved_storage_data = storage_manager.save_verification_session_images(
-                driver_id=request.driver_id,
-                request_id=request.request_id,
-                original_images={
-                    "selfie": raw_selfie_img,
-                    "license": raw_dl_img,
-                    "vehicle": raw_vehicle_img,
-                },
-                compressed_images=compressed_images_dict,
-                cropped_images={
-                    "dl_face": dl_face_crop,
-                    "vehicle_plate": plate_crop,
-                },
-                metadata={
-                    "driver_name": request.personal_info.full_name,
-                    "license_number": request.license_details.license_number,
-                    "vehicle_plate": request.vehicle_details.plate,
-                    "verification_decision": decision.value,
-                    "composite_confidence": composite_score,
-                    "rejection_reasons": rejection_reasons,
-                    "stages": {
-                        "license_ocr": stage1_res.model_dump(),
-                        "face_biometrics": stage2_res.model_dump(),
-                        "vehicle_alpr": stage3_res.model_dump(),
-                    },
-                    "composite_proof": composite_proof,
-                    "dl_face_detected": stage2_res.dl_face_detected,
-                    "selfie_face_detected": stage2_res.selfie_face_detected,
-                },
-            )
+            if background_tasks is not None:
+                background_tasks.add_task(storage_manager.save_verification_session_images, **storage_kwargs)
+            else:
+                saved_storage_data = await asyncio.to_thread(
+                    storage_manager.save_verification_session_images,
+                    **storage_kwargs,
+                )
         except Exception as e:
             logger.error(f"Error saving session images to uploads: {e}")
 
@@ -306,6 +324,9 @@ class VerificationPipeline:
                 rejection_reasons.append(
                     f"Vehicle color mismatch: detected '{s3.detected_color}' differs from registration"
                 )
+
+        # Deduplicate rejection reasons preserving order
+        rejection_reasons = list(dict.fromkeys(rejection_reasons))
 
         # 4. Strict Binary Classification (APPROVED vs REJECTED)
         all_stages_passed = s1.passed and s2.passed and s3.passed

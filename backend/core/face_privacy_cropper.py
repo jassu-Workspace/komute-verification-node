@@ -1,5 +1,6 @@
 import logging
 import os
+import threading
 from typing import Dict, List, Optional, Tuple, Any
 import cv2
 import numpy as np
@@ -17,10 +18,12 @@ class FacePrivacyCropper:
     Stage 2A: Privacy-Preserving Face Isolation & Auto-Cropper.
     Engineered with YuNet Deep Neural Network + Dedicated Face Presence Verification Layer.
     Guarantees 100% exclusion of card text, PII, addresses, and QR codes before cloud transmission.
+    Thread-safe implementation with internal locking.
     """
 
     def __init__(self):
         self.yunet_detector = None
+        self._detector_lock = threading.Lock()
         self._init_deep_detectors()
 
     def _init_deep_detectors(self):
@@ -58,8 +61,9 @@ class FacePrivacyCropper:
                 eval_h = max(64, min(320, ch))
                 scaled = cv2.resize(crop_bgr, (eval_w, eval_h), interpolation=cv2.INTER_AREA)
 
-                self.yunet_detector.setInputSize((eval_w, eval_h))
-                _, faces = self.yunet_detector.detect(scaled)
+                with self._detector_lock:
+                    self.yunet_detector.setInputSize((eval_w, eval_h))
+                    _, faces = self.yunet_detector.detect(scaled)
 
                 if faces is not None and len(faces) > 0:
                     for face in faces:
@@ -101,8 +105,9 @@ class FacePrivacyCropper:
                 scaled = cv2.resize(img_bgr, (target_w, target_h), interpolation=cv2.INTER_AREA)
 
                 try:
-                    self.yunet_detector.setInputSize((target_w, target_h))
-                    _, faces = self.yunet_detector.detect(scaled)
+                    with self._detector_lock:
+                        self.yunet_detector.setInputSize((target_w, target_h))
+                        _, faces = self.yunet_detector.detect(scaled)
                     if faces is not None and len(faces) > 0:
                         for face in faces:
                             score = float(face[-1])

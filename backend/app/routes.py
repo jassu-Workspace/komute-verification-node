@@ -2,7 +2,7 @@ import time
 from datetime import datetime, timezone
 import logging
 from typing import Optional
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import HTMLResponse
 from app.config import settings
 from app.schemas import (
@@ -32,10 +32,13 @@ router = APIRouter()
     description="Executes Stage 1 License OCR, Stage 2 Zero-PII Face Biometrics, and Stage 3 ALPR & Color Verification.",
     dependencies=[Depends(verify_api_key), Depends(check_rate_limit)],
 )
-async def verify_driver(request: VerificationRequest) -> VerificationResponse:
+async def verify_driver(
+    request: VerificationRequest,
+    background_tasks: BackgroundTasks,
+) -> VerificationResponse:
     """Execute end-to-end multi-stage driver verification pipeline."""
     try:
-        response = await pipeline_engine.execute_verification(request)
+        response = await pipeline_engine.execute_verification(request, background_tasks=background_tasks)
         return response
     except Exception as e:
         logger.exception(f"Unhandled error in /verify: {e}")
@@ -278,6 +281,7 @@ async def get_system_telemetry():
     "/api/v1/telemetry/sessions",
     summary="Past Verification Sessions & Audits",
     description="List recent driver verification sessions with decision metadata and file metrics.",
+    dependencies=[Depends(verify_api_key), Depends(check_rate_limit)],
 )
 async def get_verification_sessions(limit: int = 50):
     """List recent verification sessions."""
@@ -290,6 +294,7 @@ async def get_verification_sessions(limit: int = 50):
     "/api/v1/telemetry/session/{driver_id}/{request_id}",
     summary="Deep Verification Session Audit & Model Inspector",
     description="Retrieve granular stage-by-stage outputs, raw model responses, and generated artifacts for a session.",
+    dependencies=[Depends(verify_api_key), Depends(check_rate_limit)],
 )
 async def get_session_detail(driver_id: str, request_id: str):
     """Retrieve detailed session audit including stage results, VLM outputs, and files."""
@@ -307,6 +312,7 @@ async def get_session_detail(driver_id: str, request_id: str):
     "/api/v1/telemetry/self-test",
     summary="Live Diagnostics & Model Self-Test",
     description="Executes instant live benchmarks across Face Privacy Cropper, EasyOCR, and Image Compressor.",
+    dependencies=[Depends(verify_api_key), Depends(check_rate_limit)],
 )
 async def run_diagnostics_self_test():
     """Run real-time benchmark self-tests across pipeline models."""
@@ -318,6 +324,7 @@ async def run_diagnostics_self_test():
     "/api/v1/storage/{file_path:path}",
     summary="Serve Saved Verification Artifacts",
     description="Securely streams saved originals, compressed WebP images, and cropped faces.",
+    dependencies=[Depends(verify_api_key), Depends(check_rate_limit)],
 )
 async def get_storage_file(file_path: str):
     """Serve image files from uploads directory with traversal protection."""

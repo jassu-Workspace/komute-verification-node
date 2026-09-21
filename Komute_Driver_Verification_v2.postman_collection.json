@@ -1,0 +1,542 @@
+{
+  "info": {
+    "name": "Komüte Driver Verification v2",
+    "description": "Complete API testing collection for Komüte Driver Verification Service v2 — 3-Stage Pipeline: License OCR, Face Biometrics, ALPR & Color Verification",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "api_key",
+      "value": "kmt_live_v2_f83jf98a2h4j90xj23"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health & Diagnostics",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/health",
+            "description": "Primary health check — returns subsystem status, uptime, memory usage"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Health status is healthy or degraded', () => { const d = pm.response.json(); pm.expect(d.status).to.be.oneOf(['healthy', 'degraded']); });",
+                  "pm.test('OCR available', () => pm.expect(pm.response.json().ocr_available).to.be.true);",
+                  "pm.test('Face detector available', () => pm.expect(pm.response.json().face_detector_available).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /ping",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/ping",
+            "description": "Ultra-fast ping probe for load balancers"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Ping returns pong', () => pm.expect(pm.response.json().ping).to.eql('pong'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/health",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/health",
+            "description": "API v1 health status endpoint"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "System Telemetry",
+      "item": [
+        {
+          "name": "GET /api/v1/telemetry/system",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/telemetry/system",
+            "description": "System vitals, library versions, AI model health, pipeline config"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has vitals', () => pm.expect(pm.response.json()).to.have.property('vitals'));",
+                  "pm.test('Has libraries', () => pm.expect(pm.response.json()).to.have.property('libraries'));",
+                  "pm.test('Has ai_models', () => pm.expect(pm.response.json()).to.have.property('ai_models'));",
+                  "pm.test('Has pipeline_config', () => pm.expect(pm.response.json()).to.have.property('pipeline_config'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Core Verification",
+      "item": [
+        {
+          "name": "POST /api/v1/verify (APPROVED Scenario)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/verify",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"request_id\": \"req_postman_001\",\n  \"driver_id\": \"driver_postman_001\",\n  \"personal_info\": {\n    \"full_name\": \"John Smith\",\n    \"email_address\": \"john.smith@email.com\",\n    \"mobile_number\": \"+14165551234\",\n    \"date_of_birth\": \"1990-05-15\",\n    \"gender\": \"Male\",\n    \"role\": \"Driver\"\n  },\n  \"license_details\": {\n    \"license_number\": \"DL1234567\",\n    \"issuing_province\": \"ON\",\n    \"license_expiry_date\": \"2028-12-31\"\n  },\n  \"vehicle_details\": {\n    \"make\": \"Toyota\",\n    \"model\": \"Camry\",\n    \"year\": 2022,\n    \"color\": \"White\",\n    \"plate\": \"CMBY815\"\n  },\n  \"images\": {\n    \"selfie_base64\": \"REPLACE_WITH_BASE64_SELFIE\",\n    \"license_image_base64\": \"REPLACE_WITH_BASE64_DL_IMAGE\",\n    \"vehicle_photo_base64\": \"REPLACE_WITH_BASE64_VEHICLE_IMAGE\"\n  }\n}"
+            },
+            "description": "Full 3-stage verification — expects APPROVED or REJECTED with all stage results"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Decision is APPROVED or REJECTED', () => { const d = pm.response.json(); pm.expect(d.decision).to.be.oneOf(['APPROVED', 'REJECTED']); });",
+                  "pm.test('Composite confidence between 0 and 1', () => { const d = pm.response.json(); pm.expect(d.composite_confidence).to.be.within(0, 1); });",
+                  "pm.test('Execution time positive', () => pm.expect(pm.response.json().execution_time_ms).to.be.above(0));",
+                  "pm.test('Has license_ocr stage', () => pm.expect(pm.response.json().stages).to.have.property('license_ocr'));",
+                  "pm.test('Has face_biometrics stage', () => pm.expect(pm.response.json().stages).to.have.property('face_biometrics'));",
+                  "pm.test('Has vehicle_verification stage', () => pm.expect(pm.response.json().stages).to.have.property('vehicle_verification'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/v1/verify (REJECTED — Expired License)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/verify",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"request_id\": \"req_postman_expired_001\",\n  \"driver_id\": \"driver_postman_expired_001\",\n  \"personal_info\": {\n    \"full_name\": \"Jane Doe\",\n    \"date_of_birth\": \"1985-03-20\"\n  },\n  \"license_details\": {\n    \"license_number\": \"DL9999999\",\n    \"issuing_province\": \"ON\",\n    \"license_expiry_date\": \"2020-01-01\"\n  },\n  \"vehicle_details\": {\n    \"plate\": \"ABC1234\",\n    \"color\": \"Blue\"\n  },\n  \"images\": {\n    \"selfie_base64\": \"REPLACE_WITH_BASE64_SELFIE\",\n    \"license_image_base64\": \"REPLACE_WITH_BASE64_DL_IMAGE\",\n    \"vehicle_photo_base64\": \"REPLACE_WITH_BASE64_VEHICLE_IMAGE\"\n  }\n}"
+            },
+            "description": "Verify with expired license — expects REJECTED with expired reason"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Decision is REJECTED', () => pm.expect(pm.response.json().decision).to.eql('REJECTED'));",
+                  "pm.test('Has rejection reasons', () => { const d = pm.response.json(); pm.expect(d.rejection_reasons).to.be.an('array').that.is.not.empty; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/v1/privacy-crop-preview",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/privacy-crop-preview",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"image_base64\": \"REPLACE_WITH_BASE64_DL_IMAGE\",\n  \"margin_ratio\": 0.15\n}"
+            },
+            "description": "Zero-PII face isolation preview — returns cropped face with PII sanitized"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('face_detected is boolean', () => pm.expect(pm.response.json().face_detected).to.be.a('boolean'));",
+                  "pm.test('PII sanitized when face detected', () => { const d = pm.response.json(); if (d.face_detected) { pm.expect(d.pii_sanitized).to.be.true; pm.expect(d.face_crop_base64).to.not.be.null; } });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/v1/compress",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/compress",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "C:\\path\\to\\test_image.png"
+                },
+                {
+                  "key": "compressionPercentage",
+                  "value": "80",
+                  "type": "text"
+                },
+                {
+                  "key": "format",
+                  "value": "webp",
+                  "type": "text"
+                },
+                {
+                  "key": "maxWidth",
+                  "value": "1400",
+                  "type": "text"
+                }
+              ]
+            },
+            "description": "Compress image to WebP/AVIF — check response headers X-Original-Size, X-Compressed-Size"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Content-Type is image', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('image'));",
+                  "pm.test('Compression saved bytes', () => { const orig = parseInt(pm.response.headers.get('X-Original-Size')); const comp = parseInt(pm.response.headers.get('X-Compressed-Size')); pm.expect(comp).to.be.below(orig); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Session History",
+      "item": [
+        {
+          "name": "GET /api/v1/telemetry/sessions",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/telemetry/sessions?limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "telemetry", "sessions"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "description": "List recent verification sessions with decision metadata"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has total and sessions', () => { const d = pm.response.json(); pm.expect(d).to.have.property('total'); pm.expect(d).to.have.property('sessions'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/telemetry/session/{driver_id}/{request_id}",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/telemetry/session/driver_postman_001/req_postman_001",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "telemetry", "session", "driver_postman_001", "req_postman_001"]
+            },
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "description": "Get detailed session audit — update path with actual driver_id and request_id"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 or 404', () => pm.response.to.have.status.oneOf([200, 404]));",
+                  "pm.test('Has session details when found', () => { if (pm.response.code === 200) { pm.expect(pm.response.json()).to.have.property('decision'); } });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/v1/telemetry/self-test",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/telemetry/self-test",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "description": "Run live diagnostics self-test across all pipeline models"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('All subsystem tests passed', () => { const d = pm.response.json(); Object.values(d).forEach(v => { if (v && typeof v === 'object') { pm.expect(v.test_passed || v.status === 'operational').to.be.true; } }); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Security Tests",
+      "item": [
+        {
+          "name": "401 — No API Key",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/verify",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "description": "Request without X-API-Key — should return 401"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns 401 Unauthorized', () => pm.response.to.have.status(401));",
+                  "pm.test('Error mentions API key', () => pm.expect(pm.response.json().detail).to.include('API-Key'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "401 — Wrong API Key",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/verify",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "wrong_key_12345",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "description": "Request with incorrect API key — should return 401"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns 401 Unauthorized', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 — Missing Required Fields",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/verify",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"request_id\": \"req_incomplete\"\n}"
+            },
+            "description": "Request with missing required fields — should return 422"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns 422 Unprocessable Entity', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Storage",
+      "item": [
+        {
+          "name": "GET /api/v1/storage/{file_path}",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/storage/sessions/test/file.webp",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "storage", "sessions", "test", "file.webp"]
+            },
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "description": "Serve saved verification artifact — test with path traversal: ../../etc/passwd"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns 200, 403, or 404', () => pm.response.to.have.status.oneOf([200, 403, 404]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "403 — Path Traversal Attack",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/storage/../../etc/passwd",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "storage", "..", "..", "etc", "passwd"]
+            },
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "description": "Path traversal attack — should return 403 Forbidden"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns 403 Forbidden', () => pm.response.to.have.status(403));",
+                  "pm.test('Error mentions access denied', () => pm.expect(pm.response.json().detail).to.include('Access denied'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,10 +1,20 @@
+import os
+
+# Clamp CPU threads globally before any C-extensions (NumPy, OpenCV, OpenMP, ONNX Runtime) initialize
+os.environ["OMP_NUM_THREADS"] = "2"
+os.environ["OPENBLAS_NUM_THREADS"] = "2"
+os.environ["MKL_NUM_THREADS"] = "2"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "2"
+os.environ["NUMEXPR_NUM_THREADS"] = "2"
+os.environ["ORT_INTRA_OP_NUM_THREADS"] = "2"
+os.environ["ORT_INTER_OP_NUM_THREADS"] = "1"
+
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from app.config import settings
-import os
 from app.routes import router as api_router
 from core.face_privacy_cropper import face_privacy_cropper
 
@@ -24,8 +34,8 @@ async def lifespan(app: FastAPI):
 
     # Warm up local models in background
     try:
-        from core.face_privacy_cropper import face_privacy_cropper
-        # YuNet is already loaded in __init__
+        # YuNet is already loaded in face_privacy_cropper __init__
+        pass
     except Exception as e:
         logger.warning(f"Could not pre-warm models: {e}")
 

@@ -303,7 +303,7 @@ class TelemetryService:
             "name": f"Cloud VLM Biometric Engine ({settings.vlm_provider.upper()})",
             "role": "Stage 2: Cross-Image Forensic Biometrics",
             "ready": vlm_ready,
-            "status": f"Ready ({settings.vlm_model or 'gemini-2.5-flash'})" if vlm_ready else "Local Fallback Active",
+            "status": f"Ready ({settings.vlm_model or 'gemini-2.5-flash'})" if vlm_ready else "Fail-Safe Standby (Strict Rejection)",
             "model_path": f"Cloud Endpoint (Provider: {settings.vlm_provider})",
             "architecture": "Multimodal Vision-Language Model (Gemini 2.5 / Claude 3.5)",
             "output": "Craniofacial Structural Alignment, Anti-Spoof Liveness, Forensic Match Score",
@@ -351,7 +351,7 @@ class TelemetryService:
             "models": {
                 "primary_vlm_provider": settings.vlm_provider,
                 "primary_vlm_model": settings.vlm_model or "gemini-2.5-flash",
-                "vlm_fallback_chain": ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest", "claude-3-5-sonnet", "local_biometric_matcher"],
+                "vlm_fallback_chain": ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "claude-3-5-sonnet", "fail_safe_rejection"],
             },
         }
         self._cached_config = config

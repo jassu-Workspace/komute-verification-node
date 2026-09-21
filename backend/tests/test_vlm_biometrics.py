@@ -35,16 +35,11 @@ Thank you."""
 
 @pytest.mark.asyncio
 async def test_synthetic_biometric_verification():
-    """Verify biometric cross-check with synthetic face images using local comparator."""
-    face1 = np.full((200, 200, 3), 150, dtype=np.uint8)
-    cv2.circle(face1, (100, 100), 50, (200, 200, 200), -1)
-    face2 = np.full((200, 200, 3), 145, dtype=np.uint8)
-    cv2.circle(face2, (100, 100), 50, (200, 200, 200), -1)
-
-    result_dict = vlm_face_verifier._local_biometric_verify(face1, face2)
-    assert result_dict["is_match"] is True
-    assert result_dict["confidence_score"] >= 0.70
-    assert result_dict["verdict"] == "MATCH_CONFIRMED"
+    """Verify fail-safe biometric handling when cloud VLM provider is unconfigured."""
+    result_dict = vlm_face_verifier._fail_safe_biometric_fallback("Offline test")
+    assert result_dict["is_match"] is False
+    assert result_dict["confidence_score"] == 0.0
+    assert result_dict["verdict"] == "SERVICE_UNAVAILABLE"
 
 
 @pytest.mark.asyncio

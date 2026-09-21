@@ -138,6 +138,10 @@ def decode_base64_to_image(base64_data: str) -> np.ndarray:
     # Clean whitespace and newlines
     base64_data = base64_data.strip().replace("\n", "").replace("\r", "")
 
+    # Payload safety limit: reject payloads exceeding 30MB
+    if len(base64_data) > 30_000_000:
+        raise ValueError("Base64 payload exceeds maximum permitted size of 30MB")
+
     # Fix padding if necessary
     missing_padding = len(base64_data) % 4
     if missing_padding:
@@ -146,6 +150,8 @@ def decode_base64_to_image(base64_data: str) -> np.ndarray:
     img_bytes = base64.b64decode(base64_data)
     if len(img_bytes) == 0:
         raise ValueError("Decoded base64 bytes are empty")
+    if len(img_bytes) > 20_000_000:
+        raise ValueError("Decoded image buffer exceeds maximum permitted size of 20MB")
 
     # Use PIL first to read EXIF orientation tag if present
     try:
@@ -157,11 +163,13 @@ def decode_base64_to_image(base64_data: str) -> np.ndarray:
         bgr_arr = cv2.cvtColor(rgb_arr, cv2.COLOR_RGB2BGR)
         return bgr_arr
     except Exception:
-        # Fallback to OpenCV imdecode
+        # Fallback to OpenCV imdecode with decompression bomb bounds
         np_arr = np.frombuffer(img_bytes, np.uint8)
         img_bgr = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
         if img_bgr is None:
             raise ValueError("Failed to decode image from base64 buffer")
+        if img_bgr.shape[0] * img_bgr.shape[1] > Image.MAX_IMAGE_PIXELS:
+            raise ValueError("Decoded image exceeds maximum permitted pixel count of 50MP")
         return img_bgr
 
 
@@ -359,10 +367,10 @@ def resize_image_max_dimension(
     return scaled, scale
 
 
-def upscale_and_sharpen(img_bgr: np.ndarray, scale: float = 2.0, max_dim: int = 960) -> np.ndarray:
+def upscale_and_sharpen(img_bgr: np.ndarray, scale: float = 2.0, max_dim: int = 1800) -> np.ndarray:
     """
     Multi-Scale Upsampling for Tiny Text (Magnifying Glass effect).
-    Scales the image up with a bounded max_dim (max 960px) to prevent RAM spikes,
+    Scales the image up with a bounded max_dim (up to 1800px) to prevent RAM spikes,
     and applies a sharpening kernel to recover edges of blurred text.
     """
     if img_bgr is None or img_bgr.size == 0:
@@ -392,6 +400,25 @@ def upscale_and_sharpen(img_bgr: np.ndarray, scale: float = 2.0, max_dim: int = 
 
     sharpened = cv2.filter2D(upscaled, -1, kernel)
     return sharpened
+
+
+def apply_bilateral_clahe(img_bgr: np.ndarray, clip_limit: float = 2.5) -> np.ndarray:
+    """
+    Applies Bilateral Filter to smooth sensor noise while preserving sharp font edges,
+    followed by CLAHE in LAB luminance channel to enhance text readability without
+    harsh 1-bit binarization.
+    """
+    if img_bgr is None or img_bgr.size == 0:
+        return img_bgr
+    # Bilateral filtering: keeps edges sharp while smoothing surface/sensor noise
+    denoised = cv2.bilateralFilter(img_bgr, d=7, sigmaColor=50, sigmaSpace=50)
+    # CLAHE on L channel
+    lab = cv2.cvtColor(denoised, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(8, 8))
+    l_enhanced = clahe.apply(l)
+    enhanced_lab = cv2.merge([l_enhanced, a, b])
+    return cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
 
 
 def flatten_id_card(img_bgr: np.ndarray) -> np.ndarray:
@@ -456,11 +483,29 @@ def get_image_metrics(img_bgr: np.ndarray) -> dict:
     """
     Calculates Variance of Laplacian (Blur) and Noise metrics.
     """
+    if img_bgr is None or img_bgr.size == 0:
+        return {"blur_variance": 0.0, "is_blurry": True, "is_noisy": False, "glare_ratio": 0.0}
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-    variance = cv2.Laplacian(gray, cv2.CV_64F).var()
+    variance = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    glare_ratio = float(np.sum(gray > 250)) / float(gray.size)
     return {
-        "blur_variance": variance,
-        "is_blurry": variance < 100,
-        "is_noisy": variance > 5000
+        "blur_variance": round(variance, 2),
+        "is_blurry": variance < 65.0,
+        "is_noisy": variance > 5000.0,
+        "glare_ratio": round(glare_ratio, 3),
     }
+
+
+def assess_image_quality(img_bgr: np.ndarray) -> Tuple[bool, str, dict]:
+    """
+    Pre-flight quality gate to evaluate if the image has adequate visual fidelity
+    for accurate legal OCR verification.
+    """
+    metrics = get_image_metrics(img_bgr)
+    if metrics["blur_variance"] < 40.0:
+        return False, "Photo is excessively blurry. Please hold the camera steady and retake.", metrics
+    if metrics["glare_ratio"] > 0.30:
+        return False, "Excessive camera flash or glare detected across the card. Please tilt card away from direct light.", metrics
+    return True, "OK", metrics
+
 

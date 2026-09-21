@@ -7,7 +7,7 @@ from storage.storage import StorageManager, sanitize_folder_name
 
 
 def test_sanitize_folder_name():
-    assert sanitize_folder_name("driver/..\\123") == "driver_.._123"
+    assert sanitize_folder_name("driver/..\\123") == "driver___123"
     assert sanitize_folder_name("drv_test_01") == "drv_test_01"
     assert sanitize_folder_name("") == "unknown"
 

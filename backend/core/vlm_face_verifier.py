@@ -105,7 +105,7 @@ class VLMFaceVerifier:
         # Active modern models in Google GenAI API
         configured_model = settings.vlm_model or "gemini-2.5-flash"
         candidate_models = [configured_model]
-        for fallback in ["gemini-2.5-flash", "gemini-3.6-flash", "gemini-3.1-pro-preview", "gemini-flash"]:
+        for fallback in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]:
             if fallback not in candidate_models:
                 candidate_models.append(fallback)
 
@@ -189,71 +189,19 @@ class VLMFaceVerifier:
         response_text = response.content[0].text
         return self._extract_json_from_text(response_text)
 
-    def _local_biometric_verify(
-        self,
-        selfie_crop_bgr: np.ndarray,
-        dl_face_crop_bgr: np.ndarray,
-    ) -> Dict[str, Any]:
+    def _fail_safe_biometric_fallback(self, reason: str) -> Dict[str, Any]:
         """
-        Local high-precision computer vision biometric comparator.
-        Combines normalized grayscale cross-correlation + HSV chromatic distribution matching.
-        Guarantees zero downtime and sub-50ms execution if cloud APIs experience 503 spikes.
+        Fail-safe fallback when cloud VLM biometrics cannot be reached or are unconfigured.
+        Rejects matches strictly (0.0 confidence) to prevent false-positive identity impersonation.
         """
-        if selfie_crop_bgr is None or dl_face_crop_bgr is None or selfie_crop_bgr.size == 0 or dl_face_crop_bgr.size == 0:
-            return {
-                "is_match": False,
-                "confidence_score": 0.0,
-                "is_live_selfie": False,
-                "estimated_age_delta_years": 0,
-                "facial_feature_notes": "Missing facial crop input",
-                "reasoning": "Could not extract valid face from one or both images.",
-                "verdict": "MISMATCH",
-            }
-
-        # Normalize resolutions to 160x160 for robust comparative alignment
-        s_norm = cv2.resize(selfie_crop_bgr, (160, 160), interpolation=cv2.INTER_AREA)
-        d_norm = cv2.resize(dl_face_crop_bgr, (160, 160), interpolation=cv2.INTER_AREA)
-
-        # 1. Grayscale structural correlation
-        gray_s = cv2.cvtColor(s_norm, cv2.COLOR_BGR2GRAY)
-        gray_d = cv2.cvtColor(d_norm, cv2.COLOR_BGR2GRAY)
-        
-        # Apply CLAHE to neutralize lighting differences
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
-        gray_s = clahe.apply(gray_s)
-        gray_d = clahe.apply(gray_d)
-
-        struct_corr = float(cv2.matchTemplate(gray_s, gray_d, cv2.TM_CCOEFF_NORMED)[0][0])
-        struct_score = max(0.0, min(1.0, (struct_corr + 1.0) / 2.0))
-
-        # 2. HSV Chromatic Distribution Correlation
-        hsv_s = cv2.cvtColor(s_norm, cv2.COLOR_BGR2HSV)
-        hsv_d = cv2.cvtColor(d_norm, cv2.COLOR_BGR2HSV)
-
-        hist_s = cv2.calcHist([hsv_s], [0, 1], None, [16, 16], [0, 180, 0, 256])
-        hist_d = cv2.calcHist([hsv_d], [0, 1], None, [16, 16], [0, 180, 0, 256])
-
-        cv2.normalize(hist_s, hist_s, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
-        cv2.normalize(hist_d, hist_d, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
-
-        chroma_corr = float(cv2.compareHist(hist_s, hist_d, cv2.HISTCMP_CORREL))
-        chroma_score = max(0.0, min(1.0, (chroma_corr + 1.0) / 2.0))
-
-        # Composite local biometric confidence
-        confidence = round(float(0.55 * struct_score + 0.45 * chroma_score), 3)
-        
-        # In cloud API fallback mode, accept consistent facial alignment (score >= 0.70)
-        is_match = confidence >= 0.65
-        verdict = "MATCH_CONFIRMED" if is_match else "MISMATCH"
-
         return {
-            "is_match": is_match,
-            "confidence_score": max(confidence, 0.82 if is_match else confidence),
-            "is_live_selfie": True,
+            "is_match": False,
+            "confidence_score": 0.0,
+            "is_live_selfie": False,
             "estimated_age_delta_years": 0,
-            "facial_feature_notes": f"Local biometric analyzer: structural score {struct_score*100:.1f}%, chromatic score {chroma_score*100:.1f}%.",
-            "reasoning": "Forensic comparison confirms facial alignment and biometric agreement." if is_match else "Faces lack biometric or structural correlation.",
-            "verdict": verdict,
+            "facial_feature_notes": "Cloud biometric service unavailable; fail-safe rejection enforced.",
+            "reasoning": f"Biometric verification service unavailable: {reason}",
+            "verdict": "SERVICE_UNAVAILABLE",
         }
 
     async def verify_biometrics(
@@ -299,12 +247,12 @@ class VLMFaceVerifier:
                 elif provider == "gemini" and not has_gemini and has_anthropic:
                     return await self._verify_with_anthropic(selfie_crop_bgr, dl_face_crop_bgr)
                 else:
-                    return self._local_biometric_verify(selfie_crop_bgr, dl_face_crop_bgr)
+                    return self._fail_safe_biometric_fallback("No VLM API credentials configured")
 
             vlm_data = await asyncio.wait_for(_do_cloud_call(), timeout=6.0)
         except Exception as e:
-            logger.warning(f"VLM Cloud Provider exception or timeout ({e}). Instantly deploying local biometric verification engine.")
-            vlm_data = self._local_biometric_verify(selfie_crop_bgr, dl_face_crop_bgr)
+            logger.warning(f"VLM Cloud Provider exception or timeout ({e}). Failing safe with rejection.")
+            vlm_data = self._fail_safe_biometric_fallback(f"Biometric verification service unavailable: {str(e)}")
 
 
         is_match = bool(vlm_data.get("is_match", False))
