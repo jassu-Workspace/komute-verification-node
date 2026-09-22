@@ -37,7 +37,6 @@ Set-Location -LiteralPath $PSScriptRoot
 $RequirementsPath = Join-Path -Path $PSScriptRoot -ChildPath $RequirementsFile
 $VenvPath         = Join-Path -Path $PSScriptRoot -ChildPath ".venv"
 $VenvPython       = Join-Path -Path $VenvPath -ChildPath "Scripts\python.exe"
-$VenvActivate     = Join-Path -Path $VenvPath -ChildPath "Scripts\Activate.ps1"
 
 function Write-Step([string]$Msg) {
     Write-Host ""
@@ -77,6 +76,10 @@ Write-Ok "Requirements file: $RequirementsPath"
 
 # TLS 1.2 is required for the uv download on Windows PowerShell 5.1.
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
+
+# Cache dir and repo may live on different filesystems - copy mode avoids the
+# "Failed to hardlink files; falling back to full copy" warning on some laptops.
+$env:UV_LINK_MODE = "copy"
 
 # ------------------------------------------------------------------
 # 1. Install uv if missing
@@ -205,10 +208,10 @@ foreach ($pkg in $packages) {
     Write-Host ""
     Write-Host " [$i/$($packages.Count)] Installing: $pkg" -ForegroundColor Yellow
 
-    & $uvExe pip install --python $VenvPython $pkg
+    & $uvExe pip install --python $VenvPython "$pkg"
     if ($LASTEXITCODE -ne 0) {
         Write-Warn "uv failed for '$pkg'. Retrying with venv pip..."
-        & $VenvPython -m pip install $pkg
+        & $VenvPython -m pip install "$pkg"
         if ($LASTEXITCODE -ne 0) {
             Write-Host " [X] FAILED: $pkg" -ForegroundColor Red
             $failed += $pkg

@@ -2,7 +2,7 @@
 .SYNOPSIS
     Komüte Driver Verification Service v2 - Application Startup Script
 .DESCRIPTION
-    Launches the FastAPI backend microservice with docTR PARSeq OCR, YuNet Deep Face Biometrics,
+    Launches the FastAPI backend microservice with RapidOCR ONNX licence OCR, YuNet face isolation,
     Vehicle ALPR engine, structured uploads storage, and the interactive web dashboard.
 .EXAMPLE
     .\s.ps1
@@ -36,7 +36,10 @@ param (
     [switch]$InstallDeps
 )
 
-Set-Location -Path $PSScriptRoot
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+Set-Location -LiteralPath $PSScriptRoot
 
 Write-Host ""
 Write-Host "======================================================================" -ForegroundColor Cyan
@@ -45,43 +48,69 @@ Write-Host "      High-Privacy Cloud Biometrics & Multi-Stage Auto-Onboarding   
 Write-Host "======================================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Find suitable Python executable with required libraries
+# Find suitable Python executable (portable - no hardcoded user paths).
 function Get-PythonPath {
-    $candidatePaths = @(
-        ".\.venv\Scripts\python.exe",
-        ".\venv\Scripts\python.exe",
-        "C:\Users\jaswa\AppData\Local\Programs\Python\Python311\python.exe"
+    $candidates = @(
+        (Join-Path $PSScriptRoot ".venv\Scripts\python.exe"),
+        (Join-Path $PSScriptRoot "venv\Scripts\python.exe")
     )
-    foreach ($cand in $candidatePaths) {
-        if (Test-Path -Path $cand) {
-            return (Resolve-Path $cand).Path
+    foreach ($cand in $candidates) {
+        if (Test-Path -LiteralPath $cand) {
+            return (Resolve-Path -LiteralPath $cand).Path
         }
     }
-    $pyCmd = Get-Command python -ErrorAction SilentlyContinue
-    if ($pyCmd) {
-        return $pyCmd.Source
+    # Prefer the Windows py launcher (Python 3.11 first), then PATH lookup.
+    $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
+    if ($pyLauncher) {
+        $v311 = & $pyLauncher.Source -3.11 -c "import sys; print(sys.executable)" 2>$null
+        if (($LASTEXITCODE -eq 0) -and (-not [string]::IsNullOrWhiteSpace($v311))) {
+            return $v311.Trim()
+        }
+    }
+    foreach ($name in @("python3.11", "python3", "python")) {
+        $pyCmd = Get-Command $name -ErrorAction SilentlyContinue
+        if ($pyCmd) {
+            return $pyCmd.Source
+        }
     }
     return "python"
 }
 
 $pyExe = Get-PythonPath
-$pyVer = & $pyExe --version 2>&1
+try {
+    $pyVer = & $pyExe --version 2>&1
+} catch {
+    Write-Host " [X] No Python interpreter found. Install Python 3.11+ and/or run ./install.ps1 first." -ForegroundColor Red
+    exit 1
+}
 Write-Host " [OK] Python runtime: $pyVer ($pyExe)" -ForegroundColor Gray
 
-# 2. Check and ensure uploads directory exists
+# 2. Ensure all required storage directories exist
 $uploadsPath = Join-Path -Path $PSScriptRoot -ChildPath "backend/uploads"
-if (-not (Test-Path -Path $uploadsPath)) {
-    New-Item -ItemType Directory -Path $uploadsPath -Force | Out-Null
-    Write-Host " [OK] Created storage directory: $uploadsPath" -ForegroundColor Gray
-} else {
-    Write-Host " [OK] Storage directory verified: $uploadsPath" -ForegroundColor Gray
+$requiredDirs = @(
+    $uploadsPath,
+    (Join-Path -Path $PSScriptRoot -ChildPath "backend/storage/uploads"),
+    (Join-Path -Path $PSScriptRoot -ChildPath "storage")
+)
+foreach ($dir in $requiredDirs) {
+    if (-not (Test-Path -LiteralPath $dir)) {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        Write-Host " [OK] Created directory: $dir" -ForegroundColor Gray
+    } else {
+        Write-Host " [OK] Directory verified: $dir" -ForegroundColor Gray
+    }
 }
 
-# 3. Optional Dependency Installation
+# 3. Optional Dependency Installation (prefers uv, falls back to pip)
 if ($InstallDeps) {
     Write-Host ""
     Write-Host " [*] Installing dependencies from requirements.txt..." -ForegroundColor Yellow
-    & $pyExe -m pip install -r requirements.txt
+    $uvCmd = Get-Command uv -ErrorAction SilentlyContinue
+    if ($uvCmd) {
+        & $uvCmd.Source pip install --python $pyExe -r requirements.txt
+    } else {
+        & $pyExe -m pip install -r requirements.txt
+    }
     if ($LASTEXITCODE -ne 0) {
         Write-Host " [X] Failed to install dependencies." -ForegroundColor Red
         exit $LASTEXITCODE
@@ -93,13 +122,13 @@ if ($InstallDeps) {
 if ($RunTests) {
     Write-Host ""
     Write-Host " [*] Running Pytest Verification Suite..." -ForegroundColor Yellow
-    Set-Location -Path ".\backend"
+    Set-Location -LiteralPath (Join-Path $PSScriptRoot "backend")
     & $pyExe -m pytest -v
     $testExit = $LASTEXITCODE
-    Set-Location -Path $PSScriptRoot
+    Set-Location -LiteralPath $PSScriptRoot
     if ($testExit -ne 0) {
         Write-Host " [X] Test execution failed." -ForegroundColor Red
-        exit $LASTEXITCODE
+        exit $testExit
     }
     Write-Host " [OK] All test suites passed successfully!" -ForegroundColor Green
 }
@@ -107,13 +136,13 @@ if ($RunTests) {
 if ($RunDLTests) {
     Write-Host ""
     Write-Host " [*] Running 102 Driving License Brutal Verification Suite (RapidOCR ONNX)..." -ForegroundColor Yellow
-    Set-Location -Path ".\backend"
+    Set-Location -LiteralPath (Join-Path $PSScriptRoot "backend")
     & $pyExe run_brutal_ocr_tests.py
     $testExit = $LASTEXITCODE
-    Set-Location -Path $PSScriptRoot
+    Set-Location -LiteralPath $PSScriptRoot
     if ($testExit -ne 0) {
         Write-Host " [X] Driving License test execution failed." -ForegroundColor Red
-        exit $LASTEXITCODE
+        exit $testExit
     }
     exit 0
 }
@@ -121,15 +150,32 @@ if ($RunDLTests) {
 if ($RunPlateTests) {
     Write-Host ""
     Write-Host " [*] Running 102 Vehicle License Plate Verification Suite (RapidOCR ONNX)..." -ForegroundColor Yellow
-    Set-Location -Path ".\backend"
+    Set-Location -LiteralPath (Join-Path $PSScriptRoot "backend")
     & $pyExe tests/plate_verification/run_brutal_plate_tests.py
     $testExit = $LASTEXITCODE
-    Set-Location -Path $PSScriptRoot
+    Set-Location -LiteralPath $PSScriptRoot
     if ($testExit -ne 0) {
         Write-Host " [X] Vehicle Plate test execution failed." -ForegroundColor Red
-        exit $LASTEXITCODE
+        exit $testExit
     }
     exit 0
+}
+
+# Validate port range and required modules before starting the server.
+if (($Port -lt 1) -or ($Port -gt 65535)) {
+    Write-Host " [X] Port must be between 1 and 65535 (got $Port)." -ForegroundColor Red
+    exit 1
+}
+
+& $pyExe -c "import fastapi, uvicorn" 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host " [X] Required packages (fastapi/uvicorn) are not importable with: $pyExe" -ForegroundColor Red
+    Write-Host "     Run ./install.ps1 first, then retry." -ForegroundColor Yellow
+    exit 1
+}
+
+if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot ".env"))) {
+    Write-Host " [!] .env not found - server will start with defaults; live VLM keys will be missing." -ForegroundColor Yellow
 }
 
 # 5. Display Endpoints
