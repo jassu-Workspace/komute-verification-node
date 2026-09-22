@@ -1,8 +1,12 @@
 import pytest
 from fastapi.testclient import TestClient
+from app.config import settings
 from app.main import app
 
-client = TestClient(app)
+_headers = {}
+if settings.enable_api_key_auth and settings.api_secret_key:
+    _headers["X-API-Key"] = settings.api_secret_key
+client = TestClient(app, headers=_headers)
 
 
 def test_system_page_endpoint():

@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 import cv2
 from fastapi.testclient import TestClient
+from app.config import settings
 from app.main import app
 from core.face_privacy_cropper import face_privacy_cropper
 from core.image_utils import encode_image_to_base64
@@ -77,7 +78,10 @@ def test_concurrent_client_privacy_preview():
     """
     Stress-test /api/v1/privacy-crop-preview with concurrent TestClient HTTP requests.
     """
-    client = TestClient(app)
+    headers = {}
+    if settings.enable_api_key_auth and settings.api_secret_key:
+        headers["X-API-Key"] = settings.api_secret_key
+    client = TestClient(app, headers=headers)
     img = generate_synthetic_face_image()
     b64 = encode_image_to_base64(img)
     payload = {"image_base64": b64, "margin_ratio": 0.15}

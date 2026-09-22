@@ -15,7 +15,11 @@ from app.schemas import (
 )
 from core.dl_ocr import dl_ocr_engine
 from core.face_privacy_cropper import face_privacy_cropper
-from core.image_utils import compress_and_normalize_base64, decode_base64_to_image
+from core.image_utils import (
+    compress_and_normalize_base64,
+    decode_base64_to_image,
+    flatten_id_card,
+)
 from storage.storage import storage_manager
 from core.vehicle_alpr import vehicle_alpr_engine
 from core.vlm_face_verifier import vlm_face_verifier
@@ -47,7 +51,6 @@ class VerificationPipeline:
             raw_selfie_img = decode_base64_to_image(request.images.selfie_base64)
             raw_vehicle_img = decode_base64_to_image(request.images.vehicle_photo_base64)
 
-            from core.image_utils import flatten_id_card
             raw_dl_img = flatten_id_card(raw_dl_img)
 
             # Pre-flattened DL image used for downstream verification
@@ -130,10 +133,38 @@ class VerificationPipeline:
             return_crop=True,
         )
 
-        stage1_res, stage2_res, stage3_output = await asyncio.wait_for(
-            asyncio.gather(stage1_task, stage2_task, stage3_task),
-            timeout=20.0,
-        )
+        timeout_sec = getattr(settings, "pipeline_timeout_seconds", 45.0)
+        try:
+            stage1_res, stage2_res, stage3_output = await asyncio.wait_for(
+                asyncio.gather(stage1_task, stage2_task, stage3_task),
+                timeout=timeout_sec,
+            )
+        except (asyncio.TimeoutError, TimeoutError) as e:
+            logger.error(f"Verification pipeline stages timed out after {timeout_sec}s: {e}")
+            elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+            return VerificationResponse(
+                request_id=request.request_id,
+                driver_id=request.driver_id,
+                decision=DecisionEnum.REJECTED,
+                composite_confidence=0.0,
+                execution_time_ms=round(elapsed_ms, 2),
+                stages=StagesBreakdown(
+                    license_ocr=LicenseOcrResult(
+                        passed=False,
+                        details=f"Verification timed out after {timeout_sec}s during OCR analysis.",
+                    ),
+                    face_biometrics=FaceBiometricsResult(
+                        passed=False,
+                        reasoning=f"Verification timed out after {timeout_sec}s during biometric matching.",
+                    ),
+                    vehicle_verification=VehicleVerificationResult(
+                        passed=False,
+                        details=f"Verification timed out after {timeout_sec}s during vehicle ALPR analysis.",
+                    ),
+                ),
+                rejection_reasons=[f"Verification processing timed out ({timeout_sec}s limit exceeded). Please retry with clearer or smaller images."],
+                manual_review_reasons=["Processing timeout: Exceeded SLA latency ceiling."],
+            )
 
         # Unpack Stage 3 output (vehicle verification result + cropped license plate)
         if isinstance(stage3_output, tuple):
@@ -157,7 +188,6 @@ class VerificationPipeline:
 
         if decision == DecisionEnum.APPROVED:
             try:
-                from core.image_utils import compress_and_normalize_base64
                 compressed_dl_img, _ = compress_and_normalize_base64(
                     request.images.license_image_base64,
                     out_format="webp",

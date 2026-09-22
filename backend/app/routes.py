@@ -15,9 +15,12 @@ from app.schemas import (
 )
 
 from app.security import check_rate_limit, verify_api_key
-from core.dl_ocr import dl_ocr_engine
 from core.face_privacy_cropper import face_privacy_cropper
-from core.image_utils import decode_base64_to_image, encode_image_to_base64
+from core.image_utils import (
+    compress_and_normalize_base64,
+    decode_base64_to_image,
+    encode_image_to_base64,
+)
 from core.pipeline import pipeline_engine
 
 logger = logging.getLogger(__name__)
@@ -73,7 +76,6 @@ async def privacy_crop_preview(request: PrivacyCropPreviewRequest) -> PrivacyCro
                 message="No face detected in the provided image.",
             )
 
-        from core.image_utils import compress_and_normalize_base64
         comp_bgr, _ = compress_and_normalize_base64(request.image_base64, out_format="webp", max_dim=1400)
         crop_b64 = encode_image_to_base64(crop_bgr, format_ext=".webp")
         import uuid

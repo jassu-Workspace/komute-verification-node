@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # Privacy Face Cropping
     face_crop_padding_ratio: float = 0.15
 
+    # Verification Pipeline Latency & Timeouts
+    pipeline_timeout_seconds: float = 45.0
+
     # Storage Configuration
     uploads_dir: str = "storage/uploads"
 

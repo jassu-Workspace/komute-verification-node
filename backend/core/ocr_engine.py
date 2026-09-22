@@ -10,6 +10,7 @@ os.environ["ORT_INTRA_OP_NUM_THREADS"] = "2"
 os.environ["ORT_INTER_OP_NUM_THREADS"] = "1"
 
 import logging
+import threading
 from typing import Optional
 import cv2
 from rapidocr_onnxruntime import RapidOCR
@@ -31,22 +32,25 @@ class SharedOCREngine:
     """
     def __init__(self):
         self.ocr: Optional[RapidOCR] = None
+        self._lock = threading.Lock()
 
     def get_engine(self) -> RapidOCR:
         if self.ocr is None:
-            logger.info("Initializing Fine-Tuned RapidOCR Engine (Singleton, ONNX Runtime)...")
-            try:
-                self.ocr = RapidOCR()
-                # Apply high-accuracy DBNet detector tuning directly on postprocessing pipeline
-                if hasattr(self.ocr, "text_detector") and hasattr(self.ocr.text_detector, "postprocess_op"):
-                    self.ocr.text_detector.postprocess_op.unclip_ratio = 1.95
-                    self.ocr.text_detector.postprocess_op.box_thresh = 0.38
-                    self.ocr.text_detector.postprocess_op.thresh = 0.20
+            with self._lock:
+                if self.ocr is None:
+                    logger.info("Initializing Fine-Tuned RapidOCR Engine (Singleton, ONNX Runtime)...")
+                    try:
+                        self.ocr = RapidOCR()
+                        # Apply high-accuracy DBNet detector tuning directly on postprocessing pipeline
+                        if hasattr(self.ocr, "text_detector") and hasattr(self.ocr.text_detector, "postprocess_op"):
+                            self.ocr.text_detector.postprocess_op.unclip_ratio = 1.95
+                            self.ocr.text_detector.postprocess_op.box_thresh = 0.38
+                            self.ocr.text_detector.postprocess_op.thresh = 0.20
 
-                logger.info("Fine-Tuned RapidOCR Engine initialized successfully with calibrated thresholds.")
-            except Exception as e:
-                logger.error(f"Failed to initialize RapidOCR: {e}")
-                raise
+                        logger.info("Fine-Tuned RapidOCR Engine initialized successfully with calibrated thresholds.")
+                    except Exception as e:
+                        logger.error(f"Failed to initialize RapidOCR: {e}")
+                        raise
         return self.ocr
 
 

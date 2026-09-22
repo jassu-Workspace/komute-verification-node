@@ -34,8 +34,9 @@ async def lifespan(app: FastAPI):
 
     # Warm up local models in background
     try:
-        # YuNet is already loaded in face_privacy_cropper __init__
-        pass
+        from core.ocr_engine import shared_ocr
+        shared_ocr.get_engine()
+        logger.info("Local OCR and CV engines pre-warmed successfully.")
     except Exception as e:
         logger.warning(f"Could not pre-warm models: {e}")
 

@@ -6,9 +6,6 @@ from app.main import app
 from core.image_utils import encode_image_to_base64
 
 
-@pytest.fixture
-def client():
-    return TestClient(app)
 
 
 def generate_test_payload(
@@ -158,3 +155,40 @@ def test_full_verification_rejected_expired_license(client):
     # License must NOT be compressed when verification was rejected
     if data.get("saved_artifacts"):
         assert "license" not in data["saved_artifacts"].get("compressed_files", {})
+
+
+@pytest.mark.asyncio
+async def test_pipeline_image_compression_scope():
+    """Verify that execute_verification does not fail with UnboundLocalError on compress_and_normalize_base64."""
+    from app.schemas import VerificationRequest
+    from core.pipeline import pipeline_engine
+
+    raw_payload = generate_test_payload()
+    req = VerificationRequest(**raw_payload)
+    resp = await pipeline_engine.execute_verification(req)
+
+    # Must NOT fail with UnboundLocalError during image decoding / normalization
+    for reason in resp.rejection_reasons:
+        assert "compress_and_normalize_base64" not in reason
+    assert "cannot access local variable 'compress_and_normalize_base64'" not in (resp.stages.license_ocr.details or "")
+
+
+@pytest.mark.asyncio
+async def test_pipeline_graceful_timeout_handling(monkeypatch):
+    """Verify that execute_verification handles TimeoutError gracefully without crashing."""
+    from app.schemas import VerificationRequest
+    from core.pipeline import pipeline_engine
+    from app.config import settings
+
+    # Force a near-zero timeout to trigger timeout handling
+    monkeypatch.setattr(settings, "pipeline_timeout_seconds", 0.001)
+
+    raw_payload = generate_test_payload()
+    req = VerificationRequest(**raw_payload)
+    resp = await pipeline_engine.execute_verification(req)
+
+    assert resp.decision.value == "REJECTED"
+    assert resp.composite_confidence == 0.0
+    assert any("timed out" in r.lower() for r in resp.rejection_reasons)
+
+
