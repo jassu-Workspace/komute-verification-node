@@ -1,19 +1,21 @@
 import os
 
 # Clamp CPU threads globally to prevent 98% CPU spike and maintain smooth multithreading
-os.environ["OMP_NUM_THREADS"] = "2"
-os.environ["OPENBLAS_NUM_THREADS"] = "2"
-os.environ["MKL_NUM_THREADS"] = "2"
-os.environ["VECLIB_MAXIMUM_THREADS"] = "2"
-os.environ["NUMEXPR_NUM_THREADS"] = "2"
-os.environ["ORT_INTRA_OP_NUM_THREADS"] = "2"
-os.environ["ORT_INTER_OP_NUM_THREADS"] = "1"
+os.environ.setdefault("OMP_NUM_THREADS", "2")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "2")
+os.environ.setdefault("MKL_NUM_THREADS", "2")
+os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "2")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "2")
+os.environ.setdefault("ORT_INTRA_OP_NUM_THREADS", "2")
+os.environ.setdefault("ORT_INTER_OP_NUM_THREADS", "1")
 
 import logging
 import threading
 from typing import Optional
 import cv2
 from rapidocr_onnxruntime import RapidOCR
+
+from app.config import settings
 
 cv2.setNumThreads(2)
 
@@ -40,12 +42,17 @@ class SharedOCREngine:
                 if self.ocr is None:
                     logger.info("Initializing Fine-Tuned RapidOCR Engine (Singleton, ONNX Runtime)...")
                     try:
-                        self.ocr = RapidOCR()
+                        try:
+                            # Cards are deskewed upright before inference, so the
+                            # angle classifier is dead weight when OCR_USE_CLS=false.
+                            self.ocr = RapidOCR(use_cls=settings.ocr_use_cls)
+                        except TypeError:
+                            self.ocr = RapidOCR()
                         # Apply high-accuracy DBNet detector tuning directly on postprocessing pipeline
                         if hasattr(self.ocr, "text_detector") and hasattr(self.ocr.text_detector, "postprocess_op"):
-                            self.ocr.text_detector.postprocess_op.unclip_ratio = 1.95
-                            self.ocr.text_detector.postprocess_op.box_thresh = 0.38
-                            self.ocr.text_detector.postprocess_op.thresh = 0.20
+                            self.ocr.text_detector.postprocess_op.unclip_ratio = settings.ocr_unclip_ratio
+                            self.ocr.text_detector.postprocess_op.box_thresh = settings.ocr_box_thresh
+                            self.ocr.text_detector.postprocess_op.thresh = settings.ocr_db_thresh
 
                         logger.info("Fine-Tuned RapidOCR Engine initialized successfully with calibrated thresholds.")
                     except Exception as e:

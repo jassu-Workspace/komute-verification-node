@@ -6,6 +6,8 @@ import cv2
 import numpy as np
 from PIL import ExifTags, Image
 
+from app.config import settings
+
 try:
     import pillow_avif  # type: ignore
 except ImportError:
@@ -490,8 +492,8 @@ def get_image_metrics(img_bgr: np.ndarray) -> dict:
     glare_ratio = float(np.sum(gray > 250)) / float(gray.size)
     return {
         "blur_variance": round(variance, 2),
-        "is_blurry": variance < 65.0,
-        "is_noisy": variance > 5000.0,
+        "is_blurry": variance < settings.blurry_variance,
+        "is_noisy": variance > settings.noise_variance_max,
         "glare_ratio": round(glare_ratio, 3),
     }
 
@@ -502,9 +504,9 @@ def assess_image_quality(img_bgr: np.ndarray) -> Tuple[bool, str, dict]:
     for accurate legal OCR verification.
     """
     metrics = get_image_metrics(img_bgr)
-    if metrics["blur_variance"] < 40.0:
+    if metrics["blur_variance"] < settings.blur_variance_min:
         return False, "Photo is excessively blurry. Please hold the camera steady and retake.", metrics
-    if metrics["glare_ratio"] > 0.30:
+    if metrics["glare_ratio"] > settings.glare_ratio_max:
         return False, "Excessive camera flash or glare detected across the card. Please tilt card away from direct light.", metrics
     return True, "OK", metrics
 

@@ -15,3 +15,25 @@ backend/storage/uploads/previews/*
 backend/uploads/*
 backend/cropped_dl_dataset
 .claude
+
+# --- Secrets: never bake credentials into an image layer -----------------
+# `COPY . .` in the Dockerfile would otherwise embed every key below into the
+# published image, where it survives in the layer history even if deleted later.
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+
+# Local Postman environments can embed the live API secret
+Komute_Local.postman_environment.json
+
+# Test fixtures are large and are not needed at runtime
+backend/test_images/
+backend/real_tests/

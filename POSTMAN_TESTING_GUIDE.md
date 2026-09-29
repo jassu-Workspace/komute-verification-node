@@ -51,8 +51,8 @@ GET {{base_url}}/health
   "uptime_seconds": 1234.56,
   "uptime_human": "20m 34s",
   "timestamp": "2026-09-20T10:30:00+00:00",
-  "vlm_provider": "gemini",
-  "vlm_model": "gemini-2.5-flash",
+  "vlm_provider": "openai_compatible",
+  "vlm_model": "gpt-4o-mini",
   "ocr_available": true,
   "face_detector_available": true,
   "checks": {
@@ -418,14 +418,14 @@ GET {{base_url}}/api/v1/telemetry/system
   },
   "ai_models": {
     "yunet_face_detector": { "loaded": true, "path": "backend/models/face_detection_yunet_2023mar.onnx" },
-    "vlm_provider": "gemini",
-    "vlm_model": "gemini-2.5-flash",
+    "vlm_provider": "openai_compatible",
+    "vlm_model": "gpt-4o-mini",
     "ocr_engine": "rapidocr_onnx"
   },
   "pipeline_config": {
     "fuzzy_name_threshold": 0.85,
     "fuzzy_dl_threshold": 0.88,
-    "composite_approval_threshold": 0.85,
+    "composite_approval_threshold": 0.8,
     "face_crop_padding_ratio": 0.15,
     "rate_limit_per_minute": 60
   }

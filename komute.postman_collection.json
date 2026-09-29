@@ -15,7 +15,17 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test(\"Status code is 200\", () => {\r\n  pm.response.to.have.status(200);\r\n});\r\n\r\npm.test(\"Decision is APPROVED or REJECTED\", () => {\r\n  const data = pm.response.json();\r\n  pm.expect(data.decision).to.be.oneOf([\"APPROVED\", \"REJECTED\"]);\r\n});\r\n\r\npm.test(\"Confidence between 0 and 1\", () => {\r\n  const data = pm.response.json();\r\n  pm.expect(data.composite_confidence).to.be.within(0, 1);\r\n});\r\n\r\npm.test(\"Execution time is positive\", () => {\r\n  const data = pm.response.json();\r\n  pm.expect(data.execution_time_ms).to.be.above(0);\r\n});\r\n\r\npm.test(\"All 3 stages present\", () => {\r\n  const data = pm.response.json();\r\n  pm.expect(data.stages).to.have.property(\"license_ocr\");\r\n  pm.expect(data.stages).to.have.property(\"face_biometrics\");\r\n  pm.expect(data.stages).to.have.property(\"vehicle_verification\");\r\n});"
+              "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+              "const d = pm.response.json();",
+              "pm.test('Decision is APPROVED or REJECTED', () => pm.expect(d.decision).to.be.oneOf(['APPROVED','REJECTED']));",
+              "pm.test('Service is not degraded', () => { pm.expect(d).to.have.property('service_status'); pm.expect(d.service_status, 'Stage 2 VLM unavailable -> ' + JSON.stringify(d.degraded_subsystems)).to.eql('ok'); });",
+              "pm.test('No degraded subsystems', () => pm.expect(d.degraded_subsystems).to.eql([]));",
+              "pm.test('VLM stage actually executed', () => { const v = d.stages.face_biometrics; pm.expect(v.verdict, 'VLM verdict was ' + v.verdict).to.not.eql('SERVICE_UNAVAILABLE'); pm.expect(v.vlm_provider_used, 'no provider reported - the VLM never executed').to.be.a('string'); pm.expect(v.vlm_provider_used).to.not.be.empty; });",
+              "pm.test('VLM attempt chain populated', () => { const c = d.stages.face_biometrics.vlm_attempt_chain; pm.expect(c).to.be.an('array').that.is.not.empty; pm.expect(c[0]).to.have.property('provider'); pm.expect(c[0]).to.have.property('ok'); });",
+              "pm.test('VLM confidence within 0..1', () => pm.expect(d.stages.face_biometrics.vlm_confidence).to.be.within(0, 1));",
+              "pm.test('Composite confidence between 0 and 1', () => pm.expect(d.composite_confidence).to.be.within(0, 1));",
+              "pm.test('Execution time positive', () => pm.expect(d.execution_time_ms).to.be.above(0));",
+              "pm.test('Has all three stages', () => { pm.expect(d.stages).to.have.property('license_ocr'); pm.expect(d.stages).to.have.property('face_biometrics'); pm.expect(d.stages).to.have.property('vehicle_verification'); });"
             ]
           }
         }
@@ -70,7 +80,76 @@
           ]
         }
       },
-      "response": []
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+              "const d = pm.response.json();",
+              "pm.test('Status is healthy or degraded', () => pm.expect(d.status).to.be.oneOf(['healthy','degraded']));",
+              "pm.test('Reports VLM readiness', () => { pm.expect(d).to.have.property('vlm_ready'); pm.expect(d).to.have.property('vlm_configured'); pm.expect(d).to.have.property('vlm_key_shape_valid'); });",
+              "pm.test('VLM key shape must be valid', () => { if (d.vlm_configured) { pm.expect(d.vlm_key_shape_valid, 'Configured VLM credential has an unexpected shape; Stage 2 will fail authentication').to.be.true; } });",
+              "pm.test('OCR available', () => pm.expect(d.ocr_available).to.be.true);",
+              "pm.test('Face detector available', () => pm.expect(d.face_detector_available).to.be.true);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "VLM Diagnostics (live probe)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-API-Key",
+            "value": "{{api_key}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/diagnostics/vlm?live=true",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "diagnostics",
+            "vlm"
+          ],
+          "query": [
+            {
+              "key": "live",
+              "value": "true"
+            }
+          ]
+        },
+        "description": "Sends one minimal connectivity probe per ready provider. Use when Stage 2 reports SERVICE_UNAVAILABLE."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+              "const d = pm.response.json();",
+              "pm.test('Reports provider fallback chain', () => { pm.expect(d.provider_fallback_chain).to.be.an('array').that.is.not.empty; pm.expect(d.provider_fallback_chain[0]).to.eql(d.primary_provider); });",
+              "pm.test('Reports model fallbacks', () => pm.expect(d.model_fallbacks).to.be.an('array').that.is.not.empty);",
+              "pm.test('Each provider reports key shape validity', () => { d.providers.forEach(p => { pm.expect(p).to.have.property('key_shape_valid'); pm.expect(p).to.have.property('ready'); }); });",
+              "pm.test('No key-shape mismatches', () => pm.expect(d.key_shape_mismatches, 'Mismatched: ' + JSON.stringify(d.key_shape_mismatches)).to.eql([]));",
+              "pm.test('At least one provider is usable', () => pm.expect(d.vlm_ready, 'No VLM provider is usable. See providers[] for per-provider blocking_reason.').to.be.true);",
+              "pm.test('Env file precedence reported', () => { pm.expect(d.env_sources).to.have.property('precedence_order'); pm.expect(d.env_sources).to.have.property('conflicts'); });",
+              "pm.test('No duplicate env files reported', () => { const f = d.env_sources.loaded_files; pm.expect(new Set(f).size).to.eql(f.length); });",
+              "pm.test('Timeout budget fits inside pipeline budget', () => { const t = d.timeout_budget; pm.expect(t.vlm_total_timeout_seconds).to.be.below(t.pipeline_timeout_seconds); });",
+              "pm.test('No raw credential in payload', () => { pm.expect(JSON.stringify(d.providers.map(p => p.key_masked))).to.not.include('AIza'); });"
+            ]
+          }
+        }
+      ]
     }
   ]
 }

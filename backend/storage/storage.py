@@ -51,7 +51,13 @@ class StorageManager:
     """
 
     def __init__(self, base_dir: Optional[str] = None):
-        self.base_dir = Path(base_dir or getattr(settings, "uploads_dir", "uploads")).resolve()
+        # Resolve against the repo root rather than the process working directory
+        # so artifacts land in the same place no matter where uvicorn was started.
+        self.base_dir = (
+            Path(base_dir).resolve()
+            if base_dir
+            else settings.uploads_root
+        )
         self.drivers_dir = self.base_dir / "drivers"
         self.previews_dir = self.base_dir / "previews"
         self._init_directories()

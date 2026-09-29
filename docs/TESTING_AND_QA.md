@@ -49,7 +49,7 @@ Base64 helper (PowerShell): `[Convert]::ToBase64String([IO.File]::ReadAllBytes("
 
 - [ ] `pytest -v` fully green in clean venv (Python 3.11)
 - [ ] Auth + rate-limit + traversal abuse tests green with `ENABLE_API_KEY_AUTH=true`
-- [ ] Live VLM smoke (`gemini`) + `mock` fallback smoke both pass
+- [ ] Live VLM smoke (`openai_compatible`) + `mock` fallback smoke both pass
 - [ ] `/privacy-crop-preview` audited on 10+ real card angles — no text leakage
 - [ ] p95 `/verify` latency recorded; 20s timeout never hit in staging
 - [ ] Threshold changes (`FUZZY_*`, `COMPOSITE_*`) A/B logged with precision/recall impact

@@ -13,7 +13,7 @@
 
 ## ✨ Why this service?
 
-- **3-stage pipeline in one call** — DL OCR (RapidOCR + fuzzy match) → face isolation (YuNet, local) + cloud VLM (Gemini / Claude) → vehicle ALPR + color.
+- **3-stage pipeline in one call** — DL OCR (RapidOCR + fuzzy match) → face isolation (YuNet, local) + cloud VLM (9Router gateway / Claude) → vehicle ALPR + color.
 - **Zero-PII cloud boundary** — full licence image never leaves your host. Only tight face crops go to the VLM. Audit it live via `/privacy-crop-preview`.
 - **Explainable decisions** — weighted composite `(0.30×OCR + 0.45×Face + 0.25×Vehicle)`, per-stage scores, and full `composite_proof` math in every response.
 - **Production-ready** — API-key auth, per-IP rate limiting, health/telemetry nodes, session artifact audits, Docker + Render Blueprint deploys.
@@ -25,9 +25,9 @@
 Client backend → POST /api/v1/verify (profile + 3 base64 images)
         → Stage 1: Licence OCR, name/DL fuzzy match (≥0.85/0.88), age ≥18, expiry
         → Stage 2A: YuNet face crop on DL card (local, 15% padding)
-        → Stage 2B: Gemini/Claude compares [selfie_crop, dl_crop] (liveness + match)
+        → Stage 2B: 9Router gateway/Claude compares [selfie_crop, dl_crop] (liveness + match)
         → Stage 3: Plate extraction (O↔0/B↔8 normalized) + body-color check
-        → Composite: APPROVED only if all stages pass AND score ≥ 0.85
+        → Composite: APPROVED only if all stages pass AND score ≥ 0.80
         → Session artifacts saved in background (originals / compressed / cropped + metadata)
 ```
 
@@ -44,7 +44,7 @@ Client backend → POST /api/v1/verify (profile + 3 base64 images)
                                 v
                Isolated Face Crop + Live Selfie Crop
                                 v
-              [ Gemini / Claude VLM — zero text/PII leaked ]
+              [ 9Router gateway / Claude VLM — zero text/PII leaked ]
 ```
 
 ## 📚 Documentation (start here)
@@ -72,7 +72,7 @@ python -m venv .venv && .venv\Scripts\activate   # Windows (use source .venv/bin
 pip install -r requirements.txt
 
 # 2. Configure (see docs/CONFIGURATION.md)
-copy .env.example .env   # fill GEMINI_API_KEY + API_SECRET_KEY
+copy .env.example .env   # fill VLM_API_KEY + API_SECRET_KEY
 
 # 3. Run (from repo root)
 cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8080
@@ -120,10 +120,11 @@ Full contracts + curl for every route → [`docs/API_REFERENCE.md`](./docs/API_R
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `VLM_PROVIDER` / `VLM_MODEL` | `gemini` / `gemini-2.5-flash` | `gemini` \| `anthropic` \| `mock` |
-| `GEMINI_API_KEY` / `ANTHROPIC_API_KEY` | — | Cloud keys (secret, never commit) |
+| `VLM_PROVIDER` | `openai_compatible` | `openai_compatible` \| `anthropic` \| `mock` |
+| `VLM_API_BASE_URL` / `VLM_API_KEY` / `VLM_OPENAI_MODEL` | `https://our-llm.onrender.com/v1` / — / — | Gateway triple (secret, never commit) |
+| `ANTHROPIC_API_KEY` | — | Cloud key (secret, never commit) |
 | `FUZZY_NAME_THRESHOLD` / `FUZZY_DL_THRESHOLD` | `0.85` / `0.88` | Stage 1 pass bars |
-| `COMPOSITE_APPROVAL_THRESHOLD` | `0.85` | Bar for `APPROVED` |
+| `COMPOSITE_APPROVAL_THRESHOLD` | `0.80` | Bar for `APPROVED` |
 | `FACE_CROP_PADDING_RATIO` | `0.15` | Tight crop = stronger PII guarantee |
 | `ENABLE_API_KEY_AUTH` / `API_SECRET_KEY` | `false` / generated | Set `true` + strong secret in prod |
 | `RATE_LIMIT_PER_MINUTE` | `60` | Per-IP sliding window |
@@ -133,7 +134,7 @@ Details + tuning → [`docs/CONFIGURATION.md`](./docs/CONFIGURATION.md).
 
 ## 🐳 Deploy
 
-- **Render Blueprint (1-click):** push → New Blueprint → set `GEMINI_API_KEY` → Apply. (`render.yaml` preconfigured.)
+- **Render Blueprint (1-click):** push → New Blueprint → set `VLM_API_KEY` → Apply. (`render.yaml` preconfigured.)
 - **Docker:** `docker build -t komute-verifier-v2 . && docker run -p 8080:8080 --env-file .env komute-verifier-v2`
 - **Manual:** `chmod +x ./build.sh && ./build.sh` → `cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT`, health path `/health`.
 

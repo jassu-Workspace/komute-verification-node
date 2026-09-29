@@ -29,7 +29,7 @@ FastAPI (backend/app/main.py + routes.py)
 VerificationPipeline (backend/core/pipeline.py)
   ├── Stage 1: dl_ocr.py + ocr_engine.py + canadian_dl_grammar.py
   ├── Stage 2A: face_privacy_cropper.py (YuNet ONNX, local only)
-  ├── Stage 2B: vlm_face_verifier.py (Gemini / Anthropic / mock)
+  ├── Stage 2B: vlm_face_verifier.py (OpenAI-compatible gateway / Anthropic / mock)
   ├── Stage 3: vehicle_alpr.py (OpenCV + RapidOCR + color classifier)
   └── shared: image_utils.py (base64, EXIF, CLAHE, WebP compression)
         |
@@ -64,7 +64,7 @@ Source: `backend/core/pipeline.py:execute_verification`
    - Formula: `(0.30 × Stage1) + (0.45 × Stage2) + (0.25 × Stage3)`
    - Stage2 score = 0 if `is_live == False`
    - Stage3 score = `(plate_similarity × 0.75) + (0.25 if color_matched)`
-   - `APPROVED` only if **all stages passed AND composite ≥ threshold (default 0.85) AND zero rejection triggers**. Otherwise `REJECTED`.
+   - `APPROVED` only if **all stages passed AND composite ≥ threshold (default 0.80) AND zero rejection triggers**. Otherwise `REJECTED`.
 6. **Persistence** — licence WebP archival only on `APPROVED` (privacy minimization). All session images + metadata saved via `BackgroundTasks` so API latency is unaffected.
 7. **Response** — `VerificationResponse` with per-stage breakdown, `rejection_reasons`, `composite_proof`, `execution_time_ms`.
 
@@ -79,7 +79,7 @@ Source: `backend/core/pipeline.py:execute_verification`
 | OCR engine | `backend/core/ocr_engine.py` | Shared RapidOCR singleton |
 | DL grammar | `backend/core/canadian_dl_grammar.py` | Province/class/expiry parsing rules |
 | Face cropper | `backend/core/face_privacy_cropper.py` | YuNet ONNX (`backend/models/face_detection_yunet_2023mar.onnx`), tight crop, `pii_sanitized` flag |
-| VLM verifier | `backend/core/vlm_face_verifier.py` | Gemini / Anthropic / mock provider switch |
+| VLM verifier | `backend/core/vlm_face_verifier.py` | OpenAI-compatible gateway / Anthropic / mock provider switch |
 | Vehicle ALPR | `backend/core/vehicle_alpr.py` | Contour plate detection, OCR confusion normalization (`O↔0`, `I↔1`, `B↔8`…), HSV/K-Means color |
 | Image utils | `backend/core/image_utils.py` | Base64, EXIF fix, CLAHE, WebP/AVIF compression (15 MB cap) |
 | Storage | `backend/storage/storage.py` | Session/preview persistence, traversal-safe serving |
@@ -88,7 +88,7 @@ Source: `backend/core/pipeline.py:execute_verification`
 
 ## 5. Key Design Decisions
 
-1. **Zero-PII cloud boundary** — full licence image never leaves the host. Only 256px-class face crops are sent to Gemini/Claude. Auditable via `POST /privacy-crop-preview`.
+1. **Zero-PII cloud boundary** — full licence image never leaves the host. Only 256px-class face crops are sent to the 9Router gateway/Claude. Auditable via `POST /privacy-crop-preview`.
 2. **Local-first CV** — OCR, face detection, ALPR run on CPU (OpenCV-headless + ONNX Runtime) for cost, latency, and offline resilience.
 3. **Strict binary decision** — no `MANUAL_REVIEW` state in v2 schemas; anything below bar is `REJECTED` with explicit reasons. Simplifies downstream automation.
 4. **Async + thread offload** — FastAPI async handlers, CPU work in `to_thread`, 20s gather timeout, storage in `BackgroundTasks` to protect p99 latency.

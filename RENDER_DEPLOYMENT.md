@@ -37,7 +37,7 @@ The repository includes a ready-to-use [`render.yaml`](render.yaml) blueprint.
    - **Build Command**: `./build.sh`
    - **Start Command**: `cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT`
    - **Health Check Path**: `/health`
-6. Enter your `GEMINI_API_KEY` in the environment variable prompt.
+6. Enter your `VLM_API_KEY` in the environment variable prompt.
 7. Click **Apply**. Render will build and deploy the service.
 
 ---
@@ -67,9 +67,10 @@ If setting up manually in the Render dashboard:
    - Add the following **Environment Variables**:
      - `PYTHON_VERSION` = `3.11.9`
      - `ENVIRONMENT` = `production`
-     - `VLM_PROVIDER` = `gemini`
-     - `VLM_MODEL` = `gemini-2.5-flash`
-     - `GEMINI_API_KEY` = `<YOUR_GOOGLE_GEMINI_API_KEY>`
+      - `VLM_PROVIDER` = `openai_compatible`
+      - `VLM_API_BASE_URL` = `https://our-llm.onrender.com/v1`
+      - `VLM_OPENAI_MODEL` = `<GATEWAY_MODEL_ID>`
+      - `VLM_API_KEY` = `<YOUR_GATEWAY_TOKEN>`
      - `ENABLE_API_KEY_AUTH` = `false` *(set to `true` if you want API Key protection)*
 5. Click **Create Web Service**.
 
@@ -87,7 +88,7 @@ For 100% containerized execution using the production [`Dockerfile`](Dockerfile)
    - **Docker Context**: `.`
 4. Under **Advanced Settings**:
    - **Health Check Path**: `/health`
-   - Add environment variables (`GEMINI_API_KEY`, `VLM_PROVIDER`, etc.)
+   - Add environment variables (`VLM_API_KEY`, `VLM_PROVIDER`, etc.)
 5. Click **Create Web Service**.
 
 ---
@@ -114,8 +115,8 @@ curl -i https://your-service.onrender.com/health
   "uptime_seconds": 128.45,
   "uptime_human": "2m 8s",
   "timestamp": "2026-08-29T11:45:00.000000Z",
-  "vlm_provider": "gemini",
-  "vlm_model": "gemini-2.5-flash",
+  "vlm_provider": "openai_compatible",
+  "vlm_model": "gpt-4o-mini",
   "ocr_available": true,
   "face_detector_available": true,
   "checks": {
@@ -221,9 +222,10 @@ curl -X POST "https://your-service.onrender.com/api/v1/compress" \
 | `PORT` | Integer | `8080` | Render-assigned server listening port. |
 | `HOST` | String | `0.0.0.0` | Bind host address. |
 | `ENVIRONMENT` | String | `production` | Deployment mode (`production` or `development`). |
-| `VLM_PROVIDER` | String | `gemini` | Cloud AI model provider (`gemini`, `anthropic`, `mock`). |
-| `VLM_MODEL` | String | `gemini-2.5-flash` | Cloud VLM model identifier. |
-| `GEMINI_API_KEY` | String | *(Optional)* | Google AI Gemini API Key. |
+| `VLM_PROVIDER` | String | `openai_compatible` | Cloud AI model provider (`openai_compatible`, `anthropic`, `mock`). |
+| `VLM_API_BASE_URL` | String | `https://our-llm.onrender.com/v1` | OpenAI-compatible gateway base URL. |
+| `VLM_API_KEY` | String | *(Optional)* | Bearer token for the gateway. |
+| `VLM_OPENAI_MODEL` | String | *(none)* | Vision model ID as named by the gateway. |
 | `ENABLE_API_KEY_AUTH` | Boolean | `false` | Set `true` to require `X-API-Key` header on API endpoints. |
 | `API_SECRET_KEY` | String | *(Generated)* | Secret API key if authentication is enabled. |
 | `RATE_LIMIT_PER_MINUTE` | Integer | `60` | Max requests per minute per IP address. |

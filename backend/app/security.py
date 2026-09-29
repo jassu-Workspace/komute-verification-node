@@ -8,7 +8,7 @@ from app.config import settings
 
 # In-memory sliding window rate limiter (bounded to prevent memory leaks)
 _request_records: dict[str, list[float]] = defaultdict(list)
-_MAX_TRACKED_IPS = 2000
+_MAX_TRACKED_IPS = settings.rate_limit_max_ips
 
 
 async def verify_api_key(
@@ -44,7 +44,7 @@ async def check_rate_limit(request: Request) -> None:
         client_ip = "unknown"
 
     current_time = time.time()
-    window_start = current_time - 60.0
+    window_start = current_time - settings.rate_limit_window_seconds
 
     # Purge old records for current IP
     recent_requests = [t for t in _request_records[client_ip] if t > window_start]
@@ -59,7 +59,7 @@ async def check_rate_limit(request: Request) -> None:
     if len(recent_requests) >= settings.rate_limit_per_minute:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Rate limit exceeded: maximum {settings.rate_limit_per_minute} requests per minute",
+            detail=f"Rate limit exceeded: maximum {settings.rate_limit_per_minute} requests per {settings.rate_limit_window_seconds:.0f} seconds",
         )
 
     _request_records[client_ip].append(current_time)

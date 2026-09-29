@@ -183,6 +183,22 @@
     .badge { font-size: 0.75rem; font-weight: 700; padding: 0.25rem 0.6rem; border-radius: 6px; }
     .badge-pass { background: var(--green-bg); color: var(--green); border: 1px solid rgba(52,211,153,0.2); }
     .badge-fail { background: var(--red-bg); color: var(--red); border: 1px solid rgba(248,113,113,0.2); }
+    .badge-warn { background: var(--yellow-bg, rgba(251,191,36,0.12)); color: var(--yellow, #fbbf24); border: 1px solid rgba(251,191,36,0.25); }
+
+    /* Phase 7: degraded-subsystem banner */
+    .outcome-degraded { background: linear-gradient(135deg, rgba(251,191,36,0.16), rgba(251,191,36,0.05)); border-color: rgba(251,191,36,0.35); }
+    .outcome-degraded .outcome-status { color: #fbbf24; }
+    .degraded-banner {
+      margin: 1rem 0; padding: 1rem 1.15rem; border-radius: 10px;
+      background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.3);
+    }
+    .degraded-title { font-weight: 700; color: #fbbf24; margin-bottom: 0.25rem; }
+    .degraded-sub { font-size: 0.82rem; color: var(--text-dim); margin-bottom: 0.6rem; }
+    .degraded-banner ul { margin: 0 0 0.5rem 1.1rem; font-size: 0.82rem; color: var(--text); }
+    .degraded-banner li { margin-bottom: 0.3rem; }
+    .degraded-banner code { background: rgba(0,0,0,0.35); padding: 0.1rem 0.35rem; border-radius: 4px; font-size: 0.78rem; }
+    .degraded-hint { font-size: 0.78rem; color: var(--text-dim); }
+    .degraded-hint code { background: rgba(0,0,0,0.35); padding: 0.1rem 0.35rem; border-radius: 4px; }
 
     .stage-kv {
       display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem;
@@ -378,6 +394,14 @@
           <div id="reasonsBanner" class="reasons-banner" style="display: none;">
             <strong>Issues Found:</strong>
             <ul id="reasonsList"></ul>
+          </div>
+
+          <!-- Phase 7: infrastructure degradation is NOT a driver rejection -->
+          <div id="degradedBanner" class="degraded-banner" style="display: none;">
+            <div class="degraded-title">⚠️ Service degraded — this is an infrastructure fault, not an identity decision</div>
+            <div class="degraded-sub">The result below is a fail-safe rejection. The driver was NOT evaluated.</div>
+            <ul id="degradedList"></ul>
+            <div class="degraded-hint">Run <code>GET /api/v1/diagnostics/vlm</code> for the classified root cause.</div>
           </div>
 
           <!-- Stage 1: License OCR -->
@@ -576,6 +600,26 @@
           rList.innerHTML = (data.rejection_reasons || []).map(r => `<li>${r}</li>`).join('');
         }
 
+        // Phase 7: surface infrastructure degradation separately from an identity
+        // rejection, so an outage is never presented as a driver judgement.
+        const degraded = data.degraded_subsystems || [];
+        const degradedBanner = document.getElementById('degradedBanner');
+        if (data.service_status === 'degraded' || degraded.length > 0) {
+          degradedBanner.style.display = 'block';
+          const dList = document.getElementById('degradedList');
+          dList.innerHTML = degraded.map(d => {
+            const parts = [`<strong>${d.name}</strong>`];
+            if (d.reason) parts.push(`reason: <code>${d.reason}</code>`);
+            if (d.provider) parts.push(`provider: ${d.provider}`);
+            if (d.model) parts.push(`model: ${d.model}`);
+            if (d.detail) parts.push(`— ${d.detail}`);
+            return `<li>${parts.join(' &middot; ')}</li>`;
+          }).join('') || '<li>Subsystem unavailable (no detail supplied).</li>';
+          banner.className = 'outcome-header outcome-degraded';
+          statusEl.innerText = 'DEGRADED';
+          document.getElementById('outcomeSub').innerText = 'Fail-safe rejection — a required subsystem was unavailable';
+        }
+
         document.getElementById('compositeScore').innerText = ((data.composite_confidence || 0)*100).toFixed(1) + '%';
         document.getElementById('latencySpan').innerText = data.execution_time_ms ? `~${Math.round(data.execution_time_ms)}ms` : '';
 
@@ -619,8 +663,30 @@
 
         // Stage 2
         const s2 = data.stages.face_biometrics;
-        document.getElementById('s2Badge').className = s2.passed ? 'badge badge-pass' : 'badge badge-fail';
-        document.getElementById('s2Badge').innerText = s2.passed ? 'PASS' : 'FAIL';
+        const vlmDown = s2.verdict === 'SERVICE_UNAVAILABLE';
+        document.getElementById('s2Badge').className = s2.passed ? 'badge badge-pass' : (vlmDown ? 'badge badge-warn' : 'badge badge-fail');
+        document.getElementById('s2Badge').innerText = s2.passed ? 'PASS' : (vlmDown ? 'UNAVAILABLE' : 'FAIL');
+
+        // Phase 7: provider provenance, so a degraded run is diagnosable from the UI.
+        const chain = s2.vlm_attempt_chain || [];
+        let provenanceHtml = '';
+        if (chain.length) {
+          provenanceHtml = `
+            <div style="margin-top: 15px; padding: 12px; background: rgba(0,0,0,0.25); border-radius: 6px; border: 1px solid rgba(255,255,255,0.05);">
+              <div style="font-size: 0.8rem; color: #888; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px;">VLM Provider Attempts</div>
+              <table class="compare-table">
+                <thead><tr><th>Provider</th><th>Model</th><th>Outcome</th><th>Latency</th></tr></thead>
+                <tbody>
+                  ${chain.map(a => `<tr>
+                    <td>${a.provider ?? 'n/a'}</td>
+                    <td>${a.model ?? 'n/a'}</td>
+                    <td class="${a.ok ? 'match' : 'mismatch'}">${a.ok ? '✓ ok' : `✗ ${a.reason ?? 'failed'}`}</td>
+                    <td>${a.latency_ms ?? 0}ms</td>
+                  </tr>`).join('')}
+                </tbody>
+              </table>
+            </div>`;
+        }
         
         let s2Table = `<table class="compare-table">
           <thead><tr><th>Biometric Metric</th><th>Status</th><th>Confidence / Detail</th></tr></thead>
@@ -642,7 +708,7 @@
             </tr>
           </tbody>
         </table>`;
-        document.getElementById('s2TableContainer').innerHTML = s2Table;
+        document.getElementById('s2TableContainer').innerHTML = s2Table + provenanceHtml;
 
         // Handle Image Previews natively using Base64 from backend
         const selfiePreviewEl = document.getElementById('selfieCrop');

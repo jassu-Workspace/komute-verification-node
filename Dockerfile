@@ -33,8 +33,11 @@ ENV PYTHONUNBUFFERED=1
 EXPOSE 8080
 
 # Health check node verification
+# NOTE: uses /live, not /health. /health gates on cloud VLM readiness, so a
+# third-party provider outage would otherwise fail this probe and get the
+# container killed and restarted.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-  CMD curl -f http://localhost:${PORT:-8080}/health || exit 1
+  CMD curl -f http://localhost:${PORT:-8080}/live || exit 1
 
 # Set working directory to backend for clean module resolution
 WORKDIR /app/backend

@@ -34,8 +34,8 @@ class FacePrivacyCropper:
                     model=YUNET_MODEL_PATH,
                     config="",
                     input_size=(320, 320),
-                    score_threshold=0.50,
-                    nms_threshold=0.30,
+                    score_threshold=settings.face_yunet_score,
+                    nms_threshold=settings.face_yunet_nms,
                     top_k=5000,
                 )
                 logger.info(f"YuNet Deep Neural Face Detector initialized from: {YUNET_MODEL_PATH}")
@@ -68,7 +68,7 @@ class FacePrivacyCropper:
                 if faces is not None and len(faces) > 0:
                     for face in faces:
                         score = float(face[-1])
-                        if score >= 0.45:
+                        if score >= settings.face_verify_threshold:
                             # Verify landmark geometry: right_eye(4,5), left_eye(6,7), nose(8,9), right_mouth(10,11), left_mouth(12,13)
                             re_y, le_y = float(face[5]), float(face[7])
                             nose_y = float(face[9])
@@ -111,7 +111,7 @@ class FacePrivacyCropper:
                     if faces is not None and len(faces) > 0:
                         for face in faces:
                             score = float(face[-1])
-                            if score >= 0.45:
+                            if score >= settings.face_verify_threshold:
                                 fx, fy, fw, fh = face[0], face[1], face[2], face[3]
                                 ox = max(0, min(w - 1, int(round(fx / scale))))
                                 oy = max(0, min(h - 1, int(round(fy / scale))))
@@ -129,7 +129,7 @@ class FacePrivacyCropper:
         if len(candidates) > 1:
             boxes = [[c[0], c[1], c[0] + c[2], c[1] + c[3]] for c in candidates]
             scores = [c[4] for c in candidates]
-            idxs = cv2.dnn.NMSBoxes(boxes, scores, 0.40, 0.35)
+            idxs = cv2.dnn.NMSBoxes(boxes, scores, settings.face_nms_score, settings.face_nms_iou)
             if len(idxs) > 0:
                 candidates = [candidates[i] for i in idxs.flatten()]
 

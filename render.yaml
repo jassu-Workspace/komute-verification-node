@@ -9,34 +9,167 @@ services:
     plan: free
     buildCommand: "./build.sh"
     startCommand: "cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
-    healthCheckPath: /health
+    # Liveness only. A cloud VLM outage must NOT cause the service to be
+    # restarted; /health (which does gate on VLM readiness) is for monitoring.
+    healthCheckPath: /live
     autoDeploy: true
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
       - key: ENVIRONMENT
         value: production
+
+      # --- Cloud VLM -------------------------------------------------
       - key: VLM_PROVIDER
-        value: gemini
-      - key: VLM_MODEL
-        value: gemini-2.5-flash
-      - key: GEMINI_API_KEY
+        value: openai_compatible
+      # Keep this in sync with .env.example and docs/CONFIGURATION.md.
+      - key: VLM_MODEL_FALLBACKS
+        value: ""
+      - key: VLM_FALLBACK_CHAIN
+        value: openai_compatible,anthropic
+      # Set these in the Render dashboard. They are intentionally not synced
+      # from the repo so credentials never enter version control.
+      - key: ANTHROPIC_API_KEY
         sync: false
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-5
+      - key: VLM_API_BASE_URL
+        sync: false
+      - key: VLM_API_KEY
+        sync: false
+      - key: VLM_OPENAI_MODEL
+        sync: false
+
+      # --- Timeouts --------------------------------------------------
+      - key: PIPELINE_TIMEOUT_SECONDS
+        value: "45.0"
+      - key: VLM_CALL_TIMEOUT_SECONDS
+        value: "12.0"
+      - key: VLM_TOTAL_TIMEOUT_SECONDS
+        value: "25.0"
+
+      # --- Security --------------------------------------------------
+      # Previously false while local dev used true, so auth posture differed
+      # per environment with no visibility.
       - key: ENABLE_API_KEY_AUTH
-        value: "false"
+        value: "true"
       - key: API_SECRET_KEY
         generateValue: true
+      - key: CORS_ALLOW_ORIGINS
+        sync: false
+      - key: RATE_LIMIT_PER_MINUTE
+        value: "60"
+
+      # --- Decision thresholds ---------------------------------------
       - key: FUZZY_NAME_THRESHOLD
         value: "0.85"
       - key: FUZZY_DL_THRESHOLD
         value: "0.88"
+      - key: FUZZY_DOB_THRESHOLD
+        value: "80.0"
+      - key: FUZZY_EXPIRY_THRESHOLD
+        value: "80.0"
+      - key: REGION_GATE_SCORE
+        value: "75.0"
+      - key: SEVERE_BLUR_VARIANCE
+        value: "20.0"
       - key: COMPOSITE_APPROVAL_THRESHOLD
-        value: "0.85"
+        value: "0.80"
+      - key: VLM_MIN_MATCH_CONFIDENCE
+        value: "0.70"
       - key: FACE_CROP_PADDING_RATIO
         value: "0.15"
-      - key: RATE_LIMIT_PER_MINUTE
-        value: "60"
+
+      # --- Composite weights (must sum to 1.0) -------------------------
+      - key: STAGE1_WEIGHT
+        value: "0.30"
+      - key: STAGE2_WEIGHT
+        value: "0.45"
+      - key: STAGE3_WEIGHT
+        value: "0.25"
+      - key: STAGE3_PLATE_WEIGHT
+        value: "0.75"
+      - key: STAGE3_COLOR_WEIGHT
+        value: "0.25"
+      - key: VLM_MISMATCH_FLOOR
+        value: "0.50"
+      - key: PLATE_HARD_FLOOR
+        value: "0.40"
+      - key: PLATE_REVIEW_FLOOR
+        value: "0.85"
+
+      # --- ALPR / detector / OCR sensitivity ---------------------------
+      - key: PLATE_MATCH_THRESHOLD
+        value: "0.85"
+      - key: COLOR_AGREEMENT_MIN
+        value: "0.15"
+      - key: FACE_YUNET_SCORE
+        value: "0.50"
+      - key: FACE_YUNET_NMS
+        value: "0.30"
+      - key: FACE_VERIFY_THRESHOLD
+        value: "0.45"
+      - key: FACE_NMS_SCORE
+        value: "0.40"
+      - key: FACE_NMS_IOU
+        value: "0.35"
+      - key: OCR_BOX_THRESH
+        value: "0.38"
+      - key: OCR_DB_THRESH
+        value: "0.20"
+      - key: OCR_UNCLIP_RATIO
+        value: "1.95"
+      - key: OCR_WORKING_MAX_DIM
+        value: "1200"
+      - key: OCR_USE_CLS
+        value: "false"
+      - key: STAGE1_RECOVERY_BUDGET_SECONDS
+        value: "10.0"
+      - key: BLUR_VARIANCE_MIN
+        value: "40.0"
+      - key: BLURRY_VARIANCE
+        value: "65.0"
+      - key: GLARE_RATIO_MAX
+        value: "0.30"
+      - key: NOISE_VARIANCE_MAX
+        value: "5000.0"
+
+      # --- VLM call shaping --------------------------------------------
+      - key: VLM_MAX_TOKENS
+        value: "900"
+      - key: VLM_CONNECTIVITY_MAX_TOKENS
+        value: "8"
+      - key: VLM_TEMPERATURE
+        value: "0"
+      - key: VLM_REPAIR_CONTEXT_CHARS
+        value: "800"
+
+      # --- Uploads / telemetry / rate limiting -------------------------
+      - key: MAX_UPLOAD_MB
+        value: "15"
+      - key: PREVIEW_MAX_DIM
+        value: "1400"
+      - key: TELEMETRY_DEFAULT_LIMIT
+        value: "50"
+      - key: TELEMETRY_CACHE_TTL
+        value: "30.0"
+      - key: RATE_LIMIT_WINDOW_SECONDS
+        value: "60.0"
+      - key: RATE_LIMIT_MAX_IPS
+        value: "2000"
+
+      # --- Storage / runtime -----------------------------------------
+      - key: UPLOADS_DIR
+        value: storage/uploads
       - key: OMP_NUM_THREADS
+        value: "2"
+      - key: OPENBLAS_NUM_THREADS
+        value: "2"
+      - key: MKL_NUM_THREADS
+        value: "2"
+      - key: VECLIB_MAXIMUM_THREADS
+        value: "2"
+      - key: NUMEXPR_NUM_THREADS
         value: "2"
       - key: ORT_INTRA_OP_NUM_THREADS
         value: "2"

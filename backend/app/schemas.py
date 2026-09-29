@@ -1,12 +1,35 @@
-from datetime import date
+from datetime import date, datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class DecisionEnum(str, Enum):
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
+
+
+class ServiceStatus(BaseModel):
+    """
+    Phase 1: explicit subsystem health, so a degraded dependency can never be
+    mistaken for a legitimate business rejection inside an HTTP 200 response.
+    """
+
+    name: str = Field(..., description="Subsystem identifier")
+    status: Literal["ok", "degraded"] = Field(..., description="Subsystem health state")
+    reason: Optional[str] = Field(
+        None,
+        description=(
+            "Machine-readable failure code: no_credentials, invalid_credentials, "
+            "quota_exhausted, model_unavailable, provider_unreachable, timeout, "
+            "unparseable_response, sdk_missing, config_error, provider_error"
+        ),
+    )
+    detail: Optional[str] = Field(None, description="Human-readable masked diagnostic")
+    provider: Optional[str] = Field(None, description="Provider involved, when applicable")
+    model: Optional[str] = Field(None, description="Model involved, when applicable")
+    error_class: Optional[str] = Field(None, description="Upstream exception class name")
+    last_error_at: Optional[datetime] = Field(None, description="UTC timestamp of last failure")
 
 
 class PersonalInfo(BaseModel):
@@ -98,6 +121,8 @@ class LicenseOcrResult(BaseModel):
     name_matched: bool = Field(False, description="Whether name matched registration")
     name_similarity: float = Field(0.0, description="Token sort similarity for full name")
     dob_matched: bool = Field(False, description="Whether DOB matches registered DOB")
+    dob_similarity: float = Field(0.0, description="Similarity score for date of birth (0.0 - 1.0)")
+    expiry_similarity: float = Field(0.0, description="Similarity score for expiry date (0.0 - 1.0)")
     is_expired: bool = Field(False, description="Whether driving license has expired")
     driver_age_valid: bool = Field(True, description="Whether driver is >= 18 years old")
     confidence: float = Field(0.0, description="Stage 1 confidence score")
@@ -124,6 +149,12 @@ class FaceBiometricsResult(BaseModel):
     dl_face_crop_preview: Optional[str] = Field(None, description="Base64 preview of isolated DL face crop")
     selfie_face_crop_preview: Optional[str] = Field(None, description="Base64 preview of normalized selfie crop")
     confidence_proof: Dict[str, Any] = Field(default_factory=dict, description="Forensic biometric geometry & liveness proof")
+    vlm_provider_used: Optional[str] = Field(None, description="Provider that actually produced the verdict")
+    vlm_model_used: Optional[str] = Field(None, description="Model that actually produced the verdict")
+    vlm_attempt_chain: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Ordered provider/model attempts with outcome, latency, and failure reason",
+    )
 
 
 # Stage 3 Schema
@@ -172,6 +203,18 @@ class VerificationResponse(BaseModel):
     manual_review_reasons: List[str] = Field(default_factory=list, description="List of reasons requiring human review")
     saved_artifacts: Optional[StorageArtifacts] = Field(None, description="Paths to persisted original and cropped images")
     composite_proof: Dict[str, Any] = Field(default_factory=dict, description="Full mathematical breakdown justifying final score")
+    service_status: Literal["ok", "degraded"] = Field(
+        "ok",
+        description=(
+            "'degraded' when a required subsystem (e.g. the cloud VLM) was unavailable. "
+            "The HTTP status stays 200; assert on this field to distinguish an "
+            "infrastructure outage from a genuine identity rejection."
+        ),
+    )
+    degraded_subsystems: List[ServiceStatus] = Field(
+        default_factory=list,
+        description="Subsystems that were unavailable during this request",
+    )
 
 
 # Privacy Preview Endpoint
@@ -201,13 +244,61 @@ class HealthResponse(BaseModel):
     status: str = Field("healthy", description="Overall health status (healthy or degraded)")
     app: str = Field(default="Komüte Driver Verification Service", description="Application Name")
     version: str = Field(..., description="Application semantic version")
-    environment: str = Field("production", description="Active runtime environment")
+    environment: str = Field(default="production", description="Active runtime environment")
     uptime_seconds: float = Field(0.0, description="Uptime duration in seconds since boot")
-    uptime_human: str = Field("0s", description="Human-readable uptime string")
+    uptime_human: str = Field(default="0s", description="Human-readable uptime string")
     timestamp: str = Field(..., description="Current UTC ISO 8601 timestamp")
     vlm_provider: str = Field(..., description="Configured Vision-Language Model provider")
     vlm_model: str = Field(..., description="Configured VLM model identifier")
+    vlm_configured: bool = Field(False, description="Whether at least one VLM provider has a credential")
+    vlm_ready: bool = Field(False, description="Whether at least one VLM provider is usable right now")
+    vlm_key_shape_valid: bool = Field(
+        True,
+        description=(
+            "False when a configured credential does not match the expected shape for its "
+            "provider (e.g. a malformed gateway token in VLM_API_KEY). This is the most common "
+            "cause of a silent Stage 2 SERVICE_UNAVAILABLE verdict."
+        ),
+    )
+    vlm_last_error: Optional[str] = Field(None, description="Masked reason for the most recent VLM failure")
+    vlm_last_error_at: Optional[datetime] = Field(None, description="UTC timestamp of the most recent VLM failure")
     ocr_available: bool = Field(True, description="Whether OCR inference engine is operational")
     face_detector_available: bool = Field(True, description="Whether Face detector is operational")
     checks: Optional[SubsystemChecks] = Field(None, description="Detailed breakdown of subsystem health")
+
+
+# Phase 0: VLM Diagnostics Endpoint
+class VlmProviderProbe(BaseModel):
+    provider: str
+    configured: bool
+    credential_source: str
+    key_masked: Optional[str] = None
+    key_shape_valid: bool
+    key_shape_hint: str
+    sdk_importable: bool
+    base_url: Optional[str] = None
+    model: str
+    ready: bool
+    blocking_reason: Optional[str] = None
+    live: Optional[bool] = Field(None, description="Populated only when live=true")
+    live_detail: Optional[str] = Field(None, description="Populated only when live=true")
+
+
+class VlmDiagnosticsResponse(BaseModel):
+    primary_provider: str
+    provider_fallback_chain: List[str]
+    model_fallbacks: List[str]
+    vlm_ready: bool
+    effective_provider: Optional[str] = None
+    usable_providers: List[str] = Field(default_factory=list)
+    providers: List[VlmProviderProbe]
+    key_shape_mismatches: List[str] = Field(default_factory=list)
+    verified_providers: List[str] = Field(
+        default_factory=list,
+        description="Providers observed returning a valid verdict; these override the advisory key-shape hint",
+    )
+    timeout_budget: Dict[str, Any] = Field(default_factory=dict)
+    env_sources: Dict[str, Any] = Field(default_factory=dict)
+    last_error: Optional[Dict[str, Any]] = None
+    live: Optional[Dict[str, Any]] = Field(None, description="Populated only when live=true")
 

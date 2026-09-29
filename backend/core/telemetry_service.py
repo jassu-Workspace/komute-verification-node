@@ -49,13 +49,35 @@ class TelemetryService:
     """
     Central telemetry & diagnostics service.
     Collects system vitals, library dependencies, AI/ML model health, and session audits.
+
+    Phase 1: caches now expire on a TTL. Previously `_cached_models` / `_cached_libraries`
+    / `_cached_config` were latched for the process lifetime, so a VLM that recovered
+    (or a key that was fixed) still reported "Not Configured" until a restart.
     """
 
-    def __init__(self):
+    #: Seconds a computed telemetry snapshot stays fresh (overridable via .env).
+    CACHE_TTL_SECONDS = settings.telemetry_cache_ttl
+
+    def __init__(self) -> None:
         self._cached_libraries = None
         self._cached_models = None
         self._cached_config = None
+        self._cache_stamps: Dict[str, float] = {}
         self._storage_vitals_cache = {"time": 0, "total_files": 0, "total_size": 0}
+
+    def invalidate_caches(self) -> None:
+        """Force the next telemetry read to recompute from live state."""
+        self._cached_libraries = None
+        self._cached_models = None
+        self._cached_config = None
+        self._cache_stamps = {}
+
+    def _is_fresh(self, key: str) -> bool:
+        return time.time() - self._cache_stamps.get(key, 0.0) < self.CACHE_TTL_SECONDS
+
+    def _store(self, key: str, value: Any) -> Any:
+        self._cache_stamps[key] = time.time()
+        return value
 
     def get_system_vitals(self) -> Dict[str, Any]:
         """Collect host machine, OS, memory, and storage metrics."""
@@ -123,8 +145,8 @@ class TelemetryService:
         }
 
     def get_libraries_status(self) -> List[Dict[str, Any]]:
-        """Probe installed AI/ML libraries and dependencies."""
-        if self._cached_libraries is not None:
+        """Check installed/active status of all runtime libraries."""
+        if self._cached_libraries is not None and self._is_fresh("libraries"):
             return self._cached_libraries
 
         libraries = []
@@ -201,37 +223,64 @@ class TelemetryService:
         except Exception:
             libraries.append({"name": "Pillow", "package": "Pillow", "installed": False, "version": None, "status": "missing", "details": "Not installed"})
 
-        # Google GenAI
+        # OpenAI-compatible gateway transport
         try:
-            import google.genai
-            gemini_key = settings.gemini_api_key or os.getenv("GEMINI_API_KEY")
-            masked_key = f"{gemini_key[:6]}...{gemini_key[-4:]}" if gemini_key and len(gemini_key) > 10 else ("Configured" if gemini_key else "Not Configured")
+            import httpx
+            from core.vlm_diagnostics import mask_secret
+
+            gateway_key = settings.vlm_api_key
             libraries.append({
-                "name": "Google GenAI SDK",
-                "package": "google-genai",
+                "name": "OpenAI-compatible Gateway (httpx)",
+                "package": "httpx",
                 "installed": True,
-                "version": getattr(google.genai, "__version__", "1.0+"),
-                "status": "active" if gemini_key else "standby",
-                "details": f"API Key: {masked_key}, Primary Model: {settings.vlm_model or 'gemini-2.5-flash'}",
+                "version": getattr(httpx, "__version__", "unknown"),
+                "status": "active" if gateway_key else "standby",
+                "details": (
+                    f"Base URL: {settings.vlm_api_base_url or 'Not Configured'}, "
+                    f"API Key: {mask_secret(gateway_key) or 'Not Configured'}, "
+                    f"Model: {settings.vlm_openai_model or 'Not Configured'}"
+                ),
             })
         except ImportError:
-            libraries.append({"name": "Google GenAI SDK", "package": "google-genai", "installed": False, "version": None, "status": "missing", "details": "Not installed"})
+            libraries.append({"name": "OpenAI-compatible Gateway (httpx)", "package": "httpx", "installed": False, "version": None, "status": "missing", "details": "Not installed"})
 
         # Anthropic SDK
         try:
             import anthropic
-            anthropic_key = settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY")
-            masked_key = f"{anthropic_key[:6]}...{anthropic_key[-4:]}" if anthropic_key and len(anthropic_key) > 10 else ("Configured" if anthropic_key else "Not Configured")
+            from core.vlm_diagnostics import mask_secret
+
+            anthropic_key = settings.anthropic_api_key
             libraries.append({
                 "name": "Anthropic SDK",
                 "package": "anthropic",
                 "installed": True,
                 "version": getattr(anthropic, "__version__", "0.40+"),
                 "status": "active" if anthropic_key else "standby",
-                "details": f"API Key: {masked_key}, Model: claude-3-5-sonnet",
+                "details": f"API Key: {mask_secret(anthropic_key) or 'Not Configured'}, Model: {settings.anthropic_model}",
             })
         except ImportError:
             libraries.append({"name": "Anthropic SDK", "package": "anthropic", "installed": False, "version": None, "status": "missing", "details": "Not installed"})
+
+        # OpenAI-compatible gateway (vLLM / OpenRouter / Azure OpenAI)
+        try:
+            import httpx
+            from core.vlm_diagnostics import mask_secret
+
+            oai_key = settings.vlm_api_key
+            libraries.append({
+                "name": "OpenAI-compatible Gateway",
+                "package": "httpx",
+                "installed": True,
+                "version": httpx.__version__,
+                "status": "active" if (oai_key and settings.vlm_api_base_url) else "standby",
+                "details": (
+                    f"API Key: {mask_secret(oai_key) or 'Not Configured'}, "
+                    f"Base URL: {settings.vlm_api_base_url or 'Not Configured'}, "
+                    f"Model: {settings.vlm_openai_model or 'Not Configured'}"
+                ),
+            })
+        except ImportError:
+            libraries.append({"name": "OpenAI-compatible Gateway", "package": "httpx", "installed": False, "version": None, "status": "missing", "details": "Not installed"})
 
         # FastAPI & Uvicorn
         try:
@@ -249,11 +298,12 @@ class TelemetryService:
             pass
 
         self._cached_libraries = libraries
+        self._store("libraries", libraries)
         return libraries
 
     def get_ai_models_status(self) -> List[Dict[str, Any]]:
         """Check live loaded status of all AI/ML models in the verification pipeline."""
-        if self._cached_models is not None:
+        if self._cached_models is not None and self._is_fresh("models"):
             return self._cached_models
 
         from core.face_privacy_cropper import face_privacy_cropper
@@ -293,20 +343,34 @@ class TelemetryService:
             "output": "Bounding Quadrilaterals, Recognized Unicode Text, Confidence Scores",
         })
 
-        # 5. Cloud VLM Biometric Verifier
-        from core.vlm_face_verifier import vlm_face_verifier
-        has_gemini = bool(vlm_face_verifier.gemini_key or os.getenv("GEMINI_API_KEY"))
-        has_anthropic = bool(vlm_face_verifier.anthropic_key or os.getenv("ANTHROPIC_API_KEY"))
-        vlm_ready = has_gemini or has_anthropic
+        # 5. Cloud VLM Biometric Verifier (Phase 1: real readiness, not just key presence)
+        from core.vlm_diagnostics import vlm_diagnostics, mask_secret
+
+        vlm_probe = vlm_diagnostics.probe_all()
+        vlm_ready = bool(vlm_probe.get("vlm_ready"))
+        shape_mismatches = vlm_probe.get("key_shape_mismatches", [])
+        last_error = vlm_probe.get("last_error") or {}
+        usable = vlm_probe.get("usable_providers", [])
+
         models.append({
             "id": "cloud_vlm",
             "name": f"Cloud VLM Biometric Engine ({settings.vlm_provider.upper()})",
             "role": "Stage 2: Cross-Image Forensic Biometrics",
             "ready": vlm_ready,
-            "status": f"Ready ({settings.vlm_model or 'gemini-2.5-flash'})" if vlm_ready else "Fail-Safe Standby (Strict Rejection)",
+            "status": (
+                f"Ready via {', '.join(usable)} (model: {settings.active_model})"
+                if vlm_ready
+                else "Fail-Safe Standby (Strict Rejection)"
+            ),
             "model_path": f"Cloud Endpoint (Provider: {settings.vlm_provider})",
-            "architecture": "Multimodal Vision-Language Model (Gemini 2.5 / Claude 3.5)",
+            "architecture": "Multimodal Vision-Language Model (OpenAI-compatible gateway / Claude)",
             "output": "Craniofacial Structural Alignment, Anti-Spoof Liveness, Forensic Match Score",
+            "provider_fallback_chain": settings.provider_fallback_list,
+            "model_fallbacks": settings.model_fallback_list,
+            "key_shape_mismatches": shape_mismatches,
+            "last_error_reason": last_error.get("reason"),
+            "last_error_detail": last_error.get("detail"),
+            "last_error_provider": last_error.get("provider"),
         })
 
 
@@ -324,37 +388,69 @@ class TelemetryService:
         })
 
         self._cached_models = models
+        self._store("models", models)
         return models
 
     def get_pipeline_configuration(self) -> Dict[str, Any]:
         """Return active verification pipeline thresholds and security parameters."""
-        if self._cached_config is not None:
+        if self._cached_config is not None and self._is_fresh("config"):
             return self._cached_config
 
         config = {
             "thresholds": {
-                "face_crop_padding_ratio": f"{int(getattr(settings, 'face_crop_padding_ratio', 0.15) * 100)}%",
-                "min_face_confidence": 0.40,
-                "vlm_match_confidence_threshold": 0.70,
-                "ocr_name_similarity_threshold": getattr(settings, 'fuzzy_name_threshold', 0.85),
-                "ocr_dl_number_similarity_threshold": getattr(settings, 'fuzzy_dl_threshold', 0.88),
-                "vehicle_plate_similarity_threshold": 0.70,
-                "composite_approval_threshold": getattr(settings, 'composite_approval_threshold', 0.80),
+                "face_crop_padding_ratio": f"{int(settings.face_crop_padding_ratio * 100)}%",
+                "min_face_confidence": settings.face_verify_threshold,
+                "vlm_match_confidence_threshold": settings.vlm_min_match_confidence,
+                "ocr_name_similarity_threshold": settings.fuzzy_name_threshold,
+                "ocr_dl_number_similarity_threshold": settings.fuzzy_dl_threshold,
+                "ocr_dob_similarity_threshold": settings.fuzzy_dob_threshold,
+                "ocr_expiry_similarity_threshold": settings.fuzzy_expiry_threshold,
+                "vehicle_plate_similarity_threshold": settings.plate_match_threshold,
+                "scoring_mode": settings.scoring_mode,
+                "composite_approval_threshold": settings.composite_approval_threshold,
+                "strict_stage_pass_required": settings.strict_stage_pass_required,
+                "enforce_hard_rejections": settings.enforce_hard_rejections,
+                "field_weights": {
+                    "name": settings.field_weight_name,
+                    "dl_number": settings.field_weight_dl_number,
+                    "dob": settings.field_weight_dob,
+                    "expiry": settings.field_weight_expiry,
+                    "face": settings.field_weight_face,
+                    "plate": settings.field_weight_plate,
+                    "color": settings.field_weight_color,
+                },
+                "stage_weights": {
+                    "stage_1_dl_ocr": settings.stage1_weight,
+                    "stage_2_face_biometrics": settings.stage2_weight,
+                    "stage_3_vehicle_alpr": settings.stage3_weight,
+                },
             },
             "security": {
-                "rate_limiting_enabled": getattr(settings, 'rate_limit_per_minute', 60) > 0,
-                "rate_limit_requests_per_minute": getattr(settings, 'rate_limit_per_minute', 60),
-                "api_key_auth_enabled": getattr(settings, 'enable_api_key_auth', False),
+                "rate_limiting_enabled": settings.rate_limit_per_minute > 0,
+                "rate_limit_requests_per_minute": settings.rate_limit_per_minute,
+                "rate_limit_window_seconds": settings.rate_limit_window_seconds,
+                "api_key_auth_enabled": settings.enable_api_key_auth,
                 "pii_sanitization_enforced": True,
                 "deferred_license_compression": True,
             },
             "models": {
                 "primary_vlm_provider": settings.vlm_provider,
-                "primary_vlm_model": settings.vlm_model or "gemini-2.5-flash",
-                "vlm_fallback_chain": ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "claude-3-5-sonnet", "fail_safe_rejection"],
+                "primary_vlm_model": settings.active_model,
+                # Derived from live config instead of a hardcoded, drifting list.
+                "vlm_provider_fallback_chain": settings.provider_fallback_list,
+                "vlm_model_fallbacks": settings.model_fallback_list,
+                "anthropic_model": settings.anthropic_model,
+                "vlm_api_base_url": settings.vlm_api_base_url,
+                "vlm_openai_model": settings.vlm_openai_model,
+            },
+            "timeouts": {
+                "pipeline_timeout_seconds": settings.pipeline_timeout_seconds,
+                "vlm_total_timeout_seconds": settings.vlm_total_timeout_seconds,
+                "vlm_call_timeout_seconds": settings.vlm_call_timeout_seconds,
             },
         }
         self._cached_config = config
+        self._store("config", config)
         return config
 
     def run_engine_self_test(self) -> Dict[str, Any]:

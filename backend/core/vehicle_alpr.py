@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 from rapidfuzz import distance, fuzz
 from app.schemas import VehicleDetails, VehicleVerificationResult
+from app.config import settings
 from core.image_utils import apply_clahe, encode_image_to_base64
 
 logger = logging.getLogger(__name__)
@@ -70,8 +71,8 @@ def calculate_plate_match_score(extracted_plate: str, target_plate: str) -> Tupl
 
     best_score = max(direct_sim, conf_sim, partial_sim * 0.95)
 
-    # Consider matched if score >= 0.85 or if ambiguous normalized matches perfectly
-    matched = (best_score >= 0.85) or (conf_extracted == conf_target and len(clean_target) >= 5)
+    # Consider matched if score >= PLATE_MATCH_THRESHOLD or if ambiguous normalized matches perfectly
+    matched = (best_score >= settings.plate_match_threshold) or (conf_extracted == conf_target and len(clean_target) >= 5)
 
     return matched, round(float(best_score), 3)
 
@@ -218,7 +219,7 @@ class VehicleALPREngine:
                 logger.debug(f"Candidate crop RapidOCR error: {e}")
 
         # 2. OCR on focused lower half if candidates didn't yield match
-        if best_score < 0.85:
+        if best_score < settings.plate_match_threshold:
             try:
                 vh, vw = scaled_vehicle.shape[:2]
                 lower_half = scaled_vehicle[int(vh * 0.35) :, :]
@@ -320,7 +321,7 @@ class VehicleALPREngine:
 
         # Check match
         color_matched = False
-        if target_clean in color_counts and color_counts[target_clean] >= 0.15:
+        if target_clean in color_counts and color_counts[target_clean] >= settings.color_agreement_min:
             color_matched = True
             detected_color_name = target_clean
         elif target_clean.lower() in detected_color_name.lower() or detected_color_name.lower() in target_clean.lower():

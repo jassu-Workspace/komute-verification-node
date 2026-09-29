@@ -23,8 +23,8 @@ Response `200` (`healthy` | `degraded`):
   "uptime_seconds": 128.45,
   "uptime_human": "2m 8s",
   "timestamp": "2026-08-29T11:45:00.000000Z",
-  "vlm_provider": "gemini",
-  "vlm_model": "gemini-2.5-flash",
+  "vlm_provider": "openai_compatible",
+  "vlm_model": "gpt-4o-mini",
   "ocr_available": true,
   "face_detector_available": true,
   "checks": { "ocr_engine": true, "face_detector": true, "storage_writable": true, "memory_usage_mb": 115.4 }

@@ -11,7 +11,7 @@ FULL LICENCE IMAGE (PII: name, DL no, DOB, address, signature)
 YuNet face detect + tight crop (padding 0.15) — backend/core/face_privacy_cropper.py
         |
         v
-ONLY [selfie_face_crop, dl_face_crop] → Gemini / Claude
+ONLY [selfie_face_crop, dl_face_crop] → 9Router gateway / Claude
 (Zero text, zero numbers, zero address leaked)
 ```
 
@@ -38,7 +38,7 @@ Source: `backend/app/security.py`, wired in `backend/app/routes.py`.
 ## 4. Secrets Management
 
 - `.env` is gitignored — real keys live in host secret store (Render env vars with `sync: false`).
-- Rotate `GEMINI_API_KEY` / `API_SECRET_KEY` immediately if the sample `.env` in this repo was ever deployed.
+- Rotate `VLM_API_KEY` / `API_SECRET_KEY` immediately if the sample `.env` in this repo was ever deployed.
 - Separate keys per environment (dev / staging / prod). `VLM_PROVIDER=mock` for CI so no secret is needed.
 
 ## 5. Compliance Alignment (GDPR / DPDP / PIPEDA)
