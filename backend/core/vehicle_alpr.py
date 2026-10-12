@@ -44,6 +44,8 @@ def calculate_plate_match_score(extracted_plate: str, target_plate: str) -> Tupl
     """
     Calculate similarity between extracted plate and submitted vehicle plate,
     taking into account standard Levenshtein and OCR character ambiguities.
+    Enforces whole-plate matching: short substrings (e.g. 4-character fragments of a 9-character plate)
+    are strictly penalized by coverage and cannot falsely trigger a match.
     """
     clean_extracted = normalize_plate_string(extracted_plate)
     clean_target = normalize_plate_string(target_plate)
@@ -56,6 +58,7 @@ def calculate_plate_match_score(extracted_plate: str, target_plate: str) -> Tupl
 
     # 1. Direct Levenshtein similarity
     max_len = max(len(clean_extracted), len(clean_target))
+    min_len = min(len(clean_extracted), len(clean_target))
     lev_dist = distance.Levenshtein.distance(clean_extracted, clean_target)
     direct_sim = max(0.0, 1.0 - (lev_dist / max_len))
 
@@ -66,13 +69,32 @@ def calculate_plate_match_score(extracted_plate: str, target_plate: str) -> Tupl
     conf_dist = distance.Levenshtein.distance(conf_extracted, conf_target)
     conf_sim = max(0.0, 1.0 - (conf_dist / max_conf_len))
 
-    # 3. Fuzzy partial ratio
-    partial_sim = fuzz.partial_ratio(clean_extracted, clean_target) / 100.0
+    # 3. Whole-plate coverage and fuzzy partial ratio
+    len_coverage = min_len / max_len if max_len > 0 else 0.0
 
-    best_score = max(direct_sim, conf_sim, partial_sim * 0.95)
+    if clean_target in clean_extracted:
+        # Full target plate is embedded inside longer OCR text (e.g. "ONTARIODL7CQ1939")
+        partial_sim = 1.0
+    elif clean_extracted in clean_target and len_coverage < 0.80:
+        # Incomplete fragment only (e.g. 'L7CQ' vs 'DL7CQ1939') - strictly penalize, no partial bonus
+        partial_sim = direct_sim
+    elif len_coverage >= 0.80:
+        # High coverage (at most 1 character missing/extra), allow scaled partial ratio
+        partial_sim = (fuzz.partial_ratio(clean_extracted, clean_target) / 100.0) * len_coverage
+    else:
+        partial_sim = direct_sim
 
-    # Consider matched if score >= PLATE_MATCH_THRESHOLD or if ambiguous normalized matches perfectly
-    matched = (best_score >= settings.plate_match_threshold) or (conf_extracted == conf_target and len(clean_target) >= 5)
+    best_score = max(direct_sim, conf_sim, partial_sim)
+
+    # Require BOTH:
+    # 1. Similarity score >= threshold
+    # 2. Whole plate matched: either clean_target is in clean_extracted, or length coverage >= 0.80
+    matched = (best_score >= settings.plate_match_threshold) and (
+        (clean_target in clean_extracted) or (len_coverage >= 0.80)
+    )
+    if not matched and conf_extracted == conf_target and len(clean_target) >= 5:
+        matched = True
+        best_score = 1.0
 
     return matched, round(float(best_score), 3)
 
@@ -175,6 +197,39 @@ class VehicleALPREngine:
 
         all_detected_texts: List[str] = []
 
+        def evaluate_candidate(cand_text: str, crop_img: Optional[np.ndarray]):
+            nonlocal best_score, best_plate, best_matched, best_crop
+            text_clean = normalize_plate_string(cand_text)
+            if len(text_clean) < 3:
+                return
+
+            matched, score = calculate_plate_match_score(text_clean, target_plate)
+            # If target plate is completely contained within candidate string (e.g. DL7CQ1939 inside DL7CQ1939AND), isolate clean target plate
+            effective_plate = clean_target if clean_target in text_clean else text_clean
+
+            is_better = False
+            if score > best_score:
+                is_better = True
+            elif score == best_score and best_score > 0.0:
+                # 1. Exact match to clean_target always beats non-exact match
+                if effective_plate == clean_target and best_plate != clean_target:
+                    is_better = True
+                elif best_plate == clean_target and effective_plate != clean_target:
+                    is_better = False
+                else:
+                    # 2. Closer length to target plate wins (eliminates noise words like 'AND')
+                    new_diff = abs(len(effective_plate) - len(clean_target))
+                    cur_diff = abs(len(best_plate or "") - len(clean_target))
+                    if new_diff < cur_diff:
+                        is_better = True
+
+            if is_better:
+                best_score = score
+                best_plate = effective_plate
+                best_matched = matched
+                if crop_img is not None:
+                    best_crop = crop_img
+
         # 1. OCR on top candidate plate crops (at most top 4 candidates)
         for crop, bbox in candidates[:4]:
             if crop.size == 0:
@@ -189,31 +244,14 @@ class VehicleALPREngine:
                             text = str(line[1]).strip()
                             if not text:
                                 continue
-
                             lines_text.append(text)
                             all_detected_texts.append(text)
-
-                            text_clean = normalize_plate_string(text)
-                            if len(text_clean) >= 3:
-                                matched, score = calculate_plate_match_score(text_clean, target_plate)
-                                if score > best_score or (score == best_score and len(text_clean) > len(best_plate or "")):
-                                    best_score = score
-                                    best_plate = text_clean
-                                    best_matched = matched
-                                    best_crop = crop
+                            evaluate_candidate(text, crop)
 
                     # Evaluate concatenated text to handle split/stacked plates
                     full_crop_text = " ".join(lines_text)
                     all_detected_texts.append(full_crop_text)
-
-                    full_clean = normalize_plate_string(full_crop_text)
-                    if len(full_clean) >= 4:
-                        matched, score = calculate_plate_match_score(full_clean, target_plate)
-                        if score > best_score or (score == best_score and len(full_clean) > len(best_plate or "")):
-                            best_score = score
-                            best_plate = full_clean
-                            best_matched = matched
-                            best_crop = crop
+                    evaluate_candidate(full_crop_text, crop)
 
             except Exception as e:
                 logger.debug(f"Candidate crop RapidOCR error: {e}")
@@ -231,28 +269,13 @@ class VehicleALPREngine:
                             text = str(line[1]).strip()
                             if not text:
                                 continue
-
                             lines_text.append(text)
                             all_detected_texts.append(text)
-
-                            text_clean = normalize_plate_string(text)
-                            if len(text_clean) >= 3:
-                                matched, score = calculate_plate_match_score(text_clean, target_plate)
-                                if score > best_score or (score == best_score and len(text_clean) > len(best_plate or "")):
-                                    best_score = score
-                                    best_plate = text_clean
-                                    best_matched = matched
+                            evaluate_candidate(text, None)
 
                     full_lower_text = " ".join(lines_text)
                     all_detected_texts.append(full_lower_text)
-
-                    full_clean = normalize_plate_string(full_lower_text)
-                    if len(full_clean) >= 4:
-                        matched, score = calculate_plate_match_score(full_clean, target_plate)
-                        if score > best_score or (score == best_score and len(full_clean) > len(best_plate or "")):
-                            best_score = score
-                            best_plate = full_clean
-                            best_matched = matched
+                    evaluate_candidate(full_lower_text, None)
             except Exception as e:
                 logger.debug(f"Focused lower vehicle RapidOCR error: {e}")
 

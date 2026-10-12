@@ -164,10 +164,11 @@ class Settings(BaseSettings):
     fuzzy_name_threshold: float = 0.85
     fuzzy_dl_threshold: float = 0.88
     # Field-level OCR gates, on the 0-100 similarity scale used by dl_ocr.
-    fuzzy_dob_threshold: float = 80.0
-    fuzzy_expiry_threshold: float = 80.0
+    fuzzy_dob_threshold: float = 75.0
+    fuzzy_expiry_threshold: float = 70.0
     region_gate_score: float = 75.0
-    severe_blur_variance: float = 20.0
+    severe_blur_variance: float = 5.0
+    hardware_budget_ratio: float = 0.20
 
     # Composite stage weights (used when scoring_mode == "stage_weighted").
     stage1_weight: float = 0.30
@@ -246,11 +247,16 @@ class Settings(BaseSettings):
 
     # Security & Rate Limiting
     api_secret_key: Optional[str] = None
-    enable_api_key_auth: bool = False
+    enable_api_key_auth: bool = True
     rate_limit_per_minute: int = 60
     rate_limit_window_seconds: float = 60.0
     rate_limit_max_ips: int = 2000
+    trusted_proxies: str = "127.0.0.1,::1,localhost"
     cors_allow_origins: str = ""
+
+    # Hardware Concurrency Governor (Aligned with 20% Machine Budget)
+    max_concurrent_verifications: int = 2
+    pipeline_concurrency_timeout_seconds: float = 15.0
 
     # Server Info & Deployment Configuration
     app_name: str = "Komüte Driver Verification Service v2"
@@ -293,6 +299,11 @@ class Settings(BaseSettings):
     @property
     def resolved_cors_origins(self) -> List[str]:
         return _split_csv(self.cors_allow_origins)
+
+    @property
+    def trusted_proxy_set(self) -> set[str]:
+        """Parsed set of trusted reverse proxy hostnames and IP addresses."""
+        return {p.strip().lower() for p in self.trusted_proxies.split(",") if p.strip()}
 
 
 # Global cached settings instance

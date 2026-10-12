@@ -1,13 +1,16 @@
 import os
 
-# Clamp CPU threads globally before any C-extensions (NumPy, OpenCV, OpenMP, ONNX Runtime) initialize
-os.environ.setdefault("OMP_NUM_THREADS", "2")
-os.environ.setdefault("OPENBLAS_NUM_THREADS", "2")
-os.environ.setdefault("MKL_NUM_THREADS", "2")
-os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "2")
-os.environ.setdefault("NUMEXPR_NUM_THREADS", "2")
-os.environ.setdefault("ORT_INTRA_OP_NUM_THREADS", "2")
-os.environ.setdefault("ORT_INTER_OP_NUM_THREADS", "1")
+# Initialize hardware analysis and 20% resource governor profile before C-extensions load
+try:
+    from core.hardware_profile import apply_hardware_acceleration
+    _hw_profile = apply_hardware_acceleration()
+except Exception:
+    os.environ.setdefault("OMP_NUM_THREADS", "2")
+    os.environ.setdefault("OPENBLAS_NUM_THREADS", "2")
+    os.environ.setdefault("MKL_NUM_THREADS", "2")
+    os.environ.setdefault("ORT_INTRA_OP_NUM_THREADS", "2")
+    os.environ.setdefault("ORT_INTER_OP_NUM_THREADS", "1")
+
 
 import logging
 from contextlib import asynccontextmanager

@@ -10,6 +10,7 @@ from rapidfuzz import fuzz
 from app.schemas import LicenseDetails, LicenseOcrResult, PersonalInfo
 from app.config import settings
 from core.canadian_dl_grammar import (
+    check_embedded_province_rules,
     clean_dl_string,
     format_canadian_dl,
     normalize_province_code,
@@ -22,11 +23,59 @@ from core.image_utils import (
     assess_image_quality,
     deskew_image,
     flatten_id_card,
+    get_image_metrics,
     resize_image_max_dimension,
     upscale_and_sharpen,
 )
 
 logger = logging.getLogger(__name__)
+
+# Multilingual Month Maps (English & French)
+FRENCH_MONTH_MAP = {
+    "JANV": 1, "JAN": 1,
+    "FÉVR": 2, "FEVR": 2, "FÉV": 2, "FEV": 2,
+    "MARS": 3, "MAR": 3,
+    "AVR": 4, "AVRI": 4,
+    "MAI": 5,
+    "JUIN": 6,
+    "JUIL": 7,
+    "AOÛT": 8, "AOUT": 8,
+    "SEPT": 9, "SEP": 9,
+    "OCT": 10, "OCTO": 10,
+    "NOV": 11, "NOVE": 11,
+    "DÉC": 12, "DEC": 12, "DÉCE": 12, "DECE": 12,
+}
+
+ENGLISH_MONTH_MAP = {
+    "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
+    "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
+}
+
+# Optical Character Ambiguity Translation for Degraded Dates
+DATE_CONFUSION_MAP = str.maketrans({
+    "O": "0", "o": "0", "Q": "0", "D": "0",
+    "I": "1", "i": "1", "l": "1", "L": "1", "|": "1", "!": "1",
+    "Z": "2", "z": "2",
+    "S": "5", "s": "5",
+    "G": "6", "b": "6",
+    "B": "8",
+    "g": "9", "q": "9",
+})
+
+
+
+def sanitize_privacy_tokens(text: Optional[str]) -> Optional[str]:
+    """
+    Masks Personal Health Numbers (10-digit PHNs from BC/AB) and citizenship markers ('CAN')
+    as mandated by Canadian privacy commissioners.
+    """
+    if not text:
+        return text
+    # Mask 10-digit PHNs
+    masked = re.sub(r'\b\d{10}\b', '[REDACTED_PHN]', text)
+    # Mask Canadian citizenship marker CAN
+    masked = re.sub(r'\bCAN\b', '[REDACTED_CAN]', masked)
+    return masked
 
 
 @dataclass
@@ -143,8 +192,8 @@ class DrivingLicenseOCREngine:
 
         for box in boxes:
             t = box.text.strip()
-            # 4d tag: License Number (e.g. 4d, NUMBER, NUMERO)
-            m_4d = re.search(r'(?:4[dD]|[dD]?NUMBER|NUMERO)[\.:\s]*(.+)?', t, re.IGNORECASE)
+            # 4d tag: License Number (e.g. 4d, NUMBER, NUMÉRO, NO PERMIS, LICENCE NO)
+            m_4d = re.search(r'(?:4[dD]|\bNUMBER\b|\bNUM[EÉ]RO\b|NO\s*PERMIS|LICEN[CS]E\s*NO)[\.:\s]*(.+)?', t, re.IGNORECASE)
             if m_4d and not extracted["license_number"]:
                 candidate = (m_4d.group(1) or "").strip()
                 if len(candidate) >= 5 and re.search(r'\d', candidate):
@@ -154,8 +203,8 @@ class DrivingLicenseOCREngine:
                     if nearest and len(nearest.text.strip()) >= 5 and re.search(r'\d', nearest.text):
                         extracted["license_number"] = nearest.text.strip()
 
-            # 4b tag: Expiry Date (AAMVA 4b or Ontario/Canadian 4b.EXP / 40EXP / 4EXP)
-            m_4b = re.search(r'(?:4[bB06]?[\.:\s]*EXP|EXP[\s/]+EXP|4b|4B)[\.:\s]*(.+)?', t, re.IGNORECASE)
+            # 4b tag: Expiry Date (AAMVA 4b or Ontario/Canadian 4b.EXP / EXPIRE LE)
+            m_4b = re.search(r'(?:4[bB06]?[\.:\s]*EXP|EXP[\s/]+EXP|\b4[bB]\b|EXPIRE\s*LE|\bEXPIRATION\b)[\.:\s]*(.+)?', t, re.IGNORECASE)
             if m_4b and not extracted["expiry_date"]:
                 candidate = (m_4b.group(1) or "").strip()
                 date_m = re.search(r'(19\d{2}|20\d{2})[-/\.1|lI]?(0[1-9]|1[0-2])[-/\.1|lI]?(0[1-9]|[12]\d|3[01])', candidate) if candidate else None
@@ -170,8 +219,8 @@ class DrivingLicenseOCREngine:
                         elif len(nearest.text.strip()) >= 4 and re.search(r'\d{4}', nearest.text):
                             extracted["expiry_date"] = nearest.text.strip()
 
-            # 4a tag: Issue Date (ISS / DEL)
-            m_4a = re.search(r'(?:4a|4A|ISS|DEL)[\.:\s]*(.+)?', t, re.IGNORECASE)
+            # 4a tag: Issue Date (ISS / DEL / VALIDE LE / DELIVRE LE)
+            m_4a = re.search(r'(?:4[aA]|\bISS\b|\bDEL\b|\bD[EÉ]L\b|VALIDE\s*LE|D[EÉ]LIVR[EÉ]\s*LE|\bISSUED\b)[\.:\s]*(.+)?', t, re.IGNORECASE)
             if m_4a and not extracted["issue_date"]:
                 cand = (m_4a.group(1) or "").strip()
                 date_m = re.search(r'(19\d{2}|20\d{2})[-/\.1|lI]?(0[1-9]|1[0-2])[-/\.1|lI]?(0[1-9]|[12]\d|3[01])', cand) if cand else None
@@ -184,8 +233,8 @@ class DrivingLicenseOCREngine:
                         if date_m:
                             extracted["issue_date"] = f"{date_m.group(1)}/{date_m.group(2)}/{date_m.group(3)}"
 
-            # 3 tag: DOB (AAMVA 3 or DOB or DDN or CATEG)
-            m_3 = re.search(r'(?:3[\.:\s]|DOB|DDN|CATEG)[\.:\s]*(.+)?', t, re.IGNORECASE)
+            # 3 tag: DOB (AAMVA 3 or DOB or DDN or CATEG or DATE DE NAISSANCE or A-M-J)
+            m_3 = re.search(r'(?:3[\.:\s]|\bDOB\b|\bDDN\b|\bCATEG\b|DATE\s*DE\s*NAISSANCE|A-M-J|N[EÉ]\(E\)\s*LE)[\.:\s]*(.+)?', t, re.IGNORECASE)
             if m_3 and not extracted["dob"]:
                 cand = (m_3.group(1) or "").strip()
                 date_m = re.search(r'(19\d{2}|20\d{2})[-/\.1|lI]?(0[1-9]|1[0-2])[-/\.1|lI]?(0[1-9]|[12]\d|3[01])', cand) if cand else None
@@ -198,13 +247,40 @@ class DrivingLicenseOCREngine:
                         if date_m:
                             extracted["dob"] = f"{date_m.group(1)}/{date_m.group(2)}/{date_m.group(3)}"
 
+            # 1 tag: Surname (1 nom / surname / NAWELNOM / PNAWEINOM)
+            m_1 = re.search(r'(?:(?:[1I|l]?[\.:\s]*)?(?:P?NAWE[L|I]?\s*NOM|NOM|SURNAME|LAST\s*NAME)|1[\.:\s]+[A-Za-z]+)[\.:\s]*(.+)?', t, re.IGNORECASE)
+            if m_1 and not extracted["surname"]:
+                cand = (m_1.group(1) or "").strip()
+                if cand and cand.upper() not in ("NOM", "NAME", "SURNAME", "NAWELNOM", "PNAWEINOM"):
+                    extracted["surname"] = cand
+                else:
+                    nearest = self._find_adjacent_box(box, boxes)
+                    if nearest:
+                        extracted["surname"] = nearest.text.strip()
+                        # If surname was found below the header, also check if the line below surname is given name
+                        if not extracted["given_name"]:
+                            below_surname = self._find_adjacent_box(nearest, boxes)
+                            if below_surname and not re.search(r'^\d', below_surname.text.strip()):
+                                extracted["given_name"] = below_surname.text.strip()
+
+            # 2 tag: Given Name (2 prénom / given names)
+            m_2 = re.search(r'(?:2[\.:\s]*(?:PR[EÉ]NOM|FIRST\s*NAME)|\bGIVEN\b)[\.:\s]*(.+)?', t, re.IGNORECASE)
+            if m_2 and not extracted["given_name"]:
+                cand = (m_2.group(1) or "").strip()
+                if cand:
+                    extracted["given_name"] = cand
+                else:
+                    nearest = self._find_adjacent_box(box, boxes)
+                    if nearest:
+                        extracted["given_name"] = nearest.text.strip()
+
             # 15 tag: Gender / Sex
             m_sex = re.search(r'(?:15[\.:\s\-]*|SEX|SEXE|GEX)[\.:\s\-\_]*([MFX])', t, re.IGNORECASE)
             if m_sex and not extracted["gender"]:
                 extracted["gender"] = m_sex.group(1).upper()
 
             # 9 tag: License Class
-            m_cls = re.search(r'(?:9[\.:\s]*C[A-Za-z]+|S?CASS[A-Za-z]*|CLASS|CLASSE)[\.:\s\-\_]*([A-Za-z0-9]{1,3})?', t, re.IGNORECASE)
+            m_cls = re.search(r'(?:9[\.:\s]*C[A-Za-z]+|S?CASS[A-Za-z]*|CLASS|CLASSE|CAT[EÉ]G)[\.:\s\-\_]*([A-Za-z0-9]{1,4})?', t, re.IGNORECASE)
             if m_cls and not extracted["license_class"]:
                 val = (m_cls.group(1) or "").upper()
                 if val and val not in ("CLASS", "CATEG", "CLASSE", "CASSL", "SCASSL"):
@@ -270,7 +346,13 @@ class DrivingLicenseOCREngine:
                 except Exception:
                     pass
 
+            french_abbr = {1: "JANV", 2: "FÉVR", 3: "MARS", 4: "AVR", 5: "MAI", 6: "JUIN", 7: "JUIL", 8: "AOÛT", 9: "SEPT", 10: "OCT", 11: "NOV", 12: "DÉC"}
+            french_abbr_ascii = {1: "JANV", 2: "FEVR", 3: "MARS", 4: "AVR", 5: "MAI", 6: "JUIN", 7: "JUIL", 8: "AOUT", 9: "SEPT", 10: "OCT", 11: "NOV", 12: "DEC"}
+
             for d in parsed_dates:
+                m_fr = french_abbr.get(d.month, "")
+                m_fr_asc = french_abbr_ascii.get(d.month, "")
+                m_en = d.strftime("%b").upper()
                 variations.update([
                     d.strftime("%Y-%m-%d"),
                     d.strftime("%d-%m-%Y"),
@@ -278,11 +360,34 @@ class DrivingLicenseOCREngine:
                     d.strftime("%m/%d/%Y"),
                     d.strftime("%d.%m.%Y"),
                     d.strftime("%d %b %Y").lower(),
+                    d.strftime("%d %b %Y").upper(),
+                    d.strftime("%d-%b-%Y").upper(),
+                    d.strftime("%d/%b/%Y").upper(),
+                    f"{d.day:02d} {m_en} {d.year}".lower(),
+                    f"{d.day:02d} {m_en} {d.year}",
+                    f"{d.day} {m_en} {d.year}",
+                    f"{d.day:02d}{m_en}{d.year}",
+                    f"{d.day}{m_en}{d.year}",
+                    f"{d.day:02d}{d.strftime('%b')}{d.year}",
+                    f"{d.day}{d.strftime('%b')}{d.year}",
                     d.strftime("%b %d, %Y").lower(),
+                    d.strftime("%b %d %Y").upper(),
                     d.strftime("%Y/%m/%d"),
                     d.strftime("%Y%m%d"),
                     d.strftime("%y%m%d"),
                 ])
+                if m_fr:
+                    variations.update([
+                        f"{d.day:02d} {m_fr} {d.year}",
+                        f"{d.day:02d}-{m_fr}-{d.year}",
+                        f"{d.day} {m_fr} {d.year}",
+                    ])
+                if m_fr_asc:
+                    variations.update([
+                        f"{d.day:02d} {m_fr_asc} {d.year}",
+                        f"{d.day:02d}-{m_fr_asc}-{d.year}",
+                        f"{d.day} {m_fr_asc} {d.year}",
+                    ])
         except Exception:
             pass
         return list(variations)
@@ -379,28 +484,92 @@ class DrivingLicenseOCREngine:
 
         return best_score, best_match
 
-    def _match_name(self, raw_texts: List[str], target_name: str) -> Tuple[float, Optional[str]]:
-        """Multi-token name matching across lines and joined OCR text."""
+    def _match_name(self, raw_texts: List[str], target_name: str, aamva_name: Optional[str] = None) -> Tuple[float, Optional[str]]:
+        """Multi-token name matching across lines and joined OCR text, returning card-extracted name."""
         if not target_name:
-            return 100.0, None
+            return 100.0, aamva_name
 
         tokens = [t.upper() for t in re.findall(r'[A-Za-z0-9]+', target_name)]
         if not tokens:
-            return 100.0, None
+            return 100.0, aamva_name
 
-        whole_upper = " ".join(raw_texts).upper()
-        # If every token of the name appears in the OCR text
-        if all(t in whole_upper for t in tokens):
-            return 100.0, target_name
+        # Boilerplate / noise lines to filter out when scoring candidates
+        boilerplate_tokens = {
+            "ONTARIO", "CANADA", "DRIVER", "LICENCE", "LICENSE", "PERMIS", "CONDUIRE",
+            "MINISTRY", "TRANSPORTATION", "QUEBEC", "BRITISH", "COLUMBIA", "ALBERTA",
+            "MANITOBA", "SASKATCHEWAN", "NOVA", "SCOTIA", "NEW", "BRUNSWICK",
+            "PRINCE", "EDWARD", "ISLAND", "NEWFOUNDLAND", "LABRADOR", "NORTHWEST",
+            "TERRITORIES", "YUKON", "NUNAVUT", "CLASS", "CLASSE", "SEX", "SEXE",
+            "EYES", "YEUX", "HEIGHT", "HAUTEUR", "DATE", "BIRTH", "EXPIRY", "EXPIRATION",
+            "RESTRICTIONS", "CONDITIONS", "ENDORSEMENTS", "SAMPLE", "SPECIMEN", "DONOR", "DONNEUR"
+        }
+
+        # Candidate names from card text
+        candidates: List[str] = []
+        if aamva_name and aamva_name.strip():
+            candidates.append(aamva_name.strip())
+
+        # Collect usable raw lines
+        filtered_lines: List[str] = []
+        for line in raw_texts:
+            l_strip = line.strip()
+            if not l_strip:
+                continue
+            # Skip purely numeric or date-like lines
+            if re.match(r'^\d{4}[-/.]\d{2}[-/.]\d{2}$', l_strip) or re.sub(r'[\s\d\-/.]', '', l_strip) == '':
+                continue
+            # Skip street address lines, postal codes, and city names
+            l_up = l_strip.upper()
+            if re.search(r'^\d+\s*[A-Z]+', l_up) or re.search(r'^\d+[A-Z]+', l_up):
+                continue
+            if re.search(r'\b(STREET|ST|AVE|AVENUE|RD|ROAD|BLVD|BOULEVARD|DRIVE|DR|WAY|LANE|LN|HWY|APT|SUITE|UNIT)\b', l_up):
+                continue
+            if re.search(r'[A-Z]\d[A-Z]\s*\d[A-Z]\d', l_up) or re.search(r'[A-Z][0-9O][A-Z][0-9O][A-Z][0-9O]', l_up):
+                continue
+            if re.search(r'\b(TORONTO|MONTREAL|VANCOUVER|CALGARY|OTTAWA|EDMONTON|QUEBEC|WINNIPEG)\b', l_up):
+                continue
+            if re.search(r'\b(NAWELNOM|PNAWEINOM|NUMERO|NUMBER|AISSIDEL|AOISSIDEL|SODIREF|CATEG|GATEG|ORESITTO|ARESIT|GEXSEEM)\b', l_up):
+                continue
+            # Skip lines that are only boilerplate keywords
+            line_words = [w.upper() for w in re.findall(r'[A-Za-z]+', l_strip)]
+            if line_words and all(w in boilerplate_tokens for w in line_words):
+                continue
+            filtered_lines.append(l_strip)
+            candidates.append(l_strip)
+
+        # Also combine adjacent 2-line pairs (DL standard: Line 1 = Surname, Line 2 = Given Names)
+        for i in range(len(filtered_lines) - 1):
+            pair = f"{filtered_lines[i]} {filtered_lines[i+1]}"
+            candidates.append(pair)
 
         best_score = 0.0
-        for line in raw_texts:
-            s_sort = fuzz.token_sort_ratio(target_name.upper(), line.upper())
-            best_score = max(best_score, s_sort)
+        best_sort = 0.0
+        best_match_candidate: Optional[str] = aamva_name
 
-        s_partial = fuzz.partial_token_set_ratio(target_name.lower(), whole_upper.lower())
-        best_score = max(best_score, s_partial)
-        return best_score, target_name
+        for cand in candidates:
+            s_sort = float(fuzz.token_sort_ratio(target_name.upper(), cand.upper()))
+            s_set = float(fuzz.token_set_ratio(target_name.upper(), cand.upper()))
+            s_cand = max(s_sort, s_set)
+            if (s_cand > best_score) or (s_cand == best_score and s_sort > best_sort) or (s_cand == best_score and s_sort == best_sort and len(cand) > len(best_match_candidate or "")):
+                best_score = s_cand
+                best_sort = s_sort
+                best_match_candidate = cand
+
+        whole_upper = " ".join(raw_texts).upper()
+        # If every token of the name appears anywhere in the OCR text
+        if all(t in whole_upper for t in tokens):
+            best_score = 100.0
+            if not best_match_candidate:
+                best_match_candidate = aamva_name or target_name
+            return 100.0, best_match_candidate
+
+        s_partial = float(fuzz.partial_token_set_ratio(target_name.lower(), whole_upper.lower()))
+        if s_partial > best_score:
+            best_score = s_partial
+
+        # Only return best_match_candidate if score is reasonable (>= 35%) or if AAMVA matched it
+        final_extracted = best_match_candidate if (best_score >= 35.0 or aamva_name) else None
+        return best_score, final_extracted
 
     def _match_date(self, raw_texts: List[str], target_date: str) -> Tuple[float, Optional[str]]:
         """Multi-format date and digit sequence matching with dayfirst/monthfirst resolution."""
@@ -412,9 +581,17 @@ class DrivingLicenseOCREngine:
             return 100.0, None
 
         # Augment search texts with normalized YYYY/MM/DD dates where delimiters were misread as 1, l, I, |
+        # and optical character confusions (O/D->0, I/l->1, Z->2, S->5, B->8)
         search_texts = list(raw_texts)
         for l in raw_texts:
+            norm_l = l.translate(DATE_CONFUSION_MAP)
+            if norm_l not in search_texts:
+                search_texts.append(norm_l)
             for m in re.finditer(r'(19\d{2}|20\d{2})[-/\.1|lI](0[1-9]|1[0-2])[-/\.1|lI](0[1-9]|[12]\d|3[01])', l):
+                norm = f"{m.group(1)}/{m.group(2)}/{m.group(3)}"
+                if norm not in search_texts:
+                    search_texts.append(norm)
+            for m in re.finditer(r'(19\d{2}|20\d{2})[-/\.1|lI](0[1-9]|1[0-2])[-/\.1|lI](0[1-9]|[12]\d|3[01])', norm_l):
                 norm = f"{m.group(1)}/{m.group(2)}/{m.group(3)}"
                 if norm not in search_texts:
                     search_texts.append(norm)
@@ -444,6 +621,18 @@ class DrivingLicenseOCREngine:
                 cand_comp_m = (int(m.group(3)), int(m.group(1)), int(m.group(2)))
                 if cand_comp_d in target_components or cand_comp_m in target_components:
                     return 100.0, line
+            # Alphanumeric dates: 15 FEB 1990, 31Aug2013, 15-OCT-2026, 15 FÉVR 1990
+            for m in re.finditer(
+                r'(?:^|[^\w])(\d{1,2})[\s\-\/\.]*(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|JANV|F[EÉ]VR?|MARS|AVR|MAI|JUIN|JUIL|AO[UÛ]T|SEPT|D[EÉ]C)[\s\-\/\.]*(19\d{2}|20\d{2})(?:$|[^\w])',
+                line,
+                re.IGNORECASE,
+            ):
+                day_num = int(m.group(1))
+                mon_str = m.group(2).upper()
+                year_num = int(m.group(3))
+                mon_num = ENGLISH_MONTH_MAP.get(mon_str) or FRENCH_MONTH_MAP.get(mon_str)
+                if mon_num and (year_num, mon_num, day_num) in target_components:
+                    return 100.0, f"{year_num}/{mon_num:02d}/{day_num:02d}"
 
         variations = self.generate_date_variations(target_date)
         whole_text = " ".join(search_texts).lower()
@@ -459,14 +648,25 @@ class DrivingLicenseOCREngine:
             line_digits = re.sub(r'\D', '', line)
             if target_digits in line_digits:
                 return 100.0, line
+            norm_digits = re.sub(r'\D', '', line.translate(DATE_CONFUSION_MAP))
+            if target_digits in norm_digits:
+                return 100.0, line
             if len(line_digits) >= 6:
                 s = fuzz.partial_ratio(target_digits, line_digits)
                 if s > best_score:
                     best_score = s
                     best_match = line
+            if len(norm_digits) >= 6:
+                s_norm = fuzz.partial_ratio(target_digits, norm_digits)
+                if s_norm > best_score:
+                    best_score = s_norm
+                    best_match = line
 
         whole_digits = re.sub(r'\D', '', whole_text)
         if target_digits in whole_digits:
+            return 100.0, best_match or target_date
+        whole_norm_digits = re.sub(r'\D', '', whole_text.translate(DATE_CONFUSION_MAP))
+        if target_digits in whole_norm_digits:
             return 100.0, best_match or target_date
 
         return best_score, best_match
@@ -494,10 +694,30 @@ class DrivingLicenseOCREngine:
         threshold_dob = settings.fuzzy_dob_threshold
         threshold_exp = settings.fuzzy_expiry_threshold
 
-        # Step 0: Pre-Flight Image Quality Gate
-        is_usable, quality_msg, metrics = assess_image_quality(img_bgr)
-        if not is_usable and metrics.get("blur_variance", 100.0) < settings.severe_blur_variance:
-            # Extreme physical blur: characters are physically destroyed
+        # Step 0: Pre-Flight Image Quality Gate & Adaptive High-Pass Edge Restoration
+        working_img = img_bgr
+        raw_metrics = get_image_metrics(img_bgr)
+        blur_var = raw_metrics.get("blur_variance", 100.0)
+
+        # Unsharp mask to restore high-frequency stroke edges on degraded/blurry cards
+        if blur_var < settings.blurry_variance:
+            try:
+                gaussian = cv2.GaussianBlur(img_bgr, (0, 0), 2.0)
+                restored = cv2.addWeighted(img_bgr, 2.2, gaussian, -1.2, 0)
+                r_gray = cv2.cvtColor(restored, cv2.COLOR_BGR2GRAY)
+                new_var = float(cv2.Laplacian(r_gray, cv2.CV_64F).var())
+                if new_var > blur_var:
+                    working_img = restored
+                    blur_var = new_var
+            except Exception:
+                pass
+
+        # Evaluate quality on restored frame
+        is_usable, quality_msg, metrics = assess_image_quality(working_img)
+        metrics["blur_variance"] = round(blur_var, 2)
+
+        # Reject only if variance is below severe_blur_variance floor (characters physically destroyed)
+        if not is_usable and blur_var < settings.severe_blur_variance:
             return LicenseOcrResult(
                 passed=False,
                 number_matched=False,
@@ -513,22 +733,27 @@ class DrivingLicenseOCREngine:
         dl_number = license_details.license_number if license_details.license_number else ""
         dob = personal_info.date_of_birth if personal_info.date_of_birth else ""
         exp = license_details.license_expiry_date or license_details.expiry_date or ""
-        prov = license_details.issuing_province if license_details.issuing_province else "ON"
+        prov = normalize_province_code(license_details.issuing_province) if license_details.issuing_province else "ON"
 
-        # Determine surname for Canadian provincial initial validation
+        # Determine surname and given names for Canadian provincial initial validation
         parts = name.split()
         surname = parts[-1] if len(parts) > 1 else name
+        given_names = " ".join(parts[:-1]) if len(parts) > 1 else ""
 
         # PASS 1: High-Fidelity Bilateral + LAB CLAHE Continuous Contrast
-        raw_texts, boxes = self.extract_text_and_boxes(img_bgr, enhancement_mode="bilateral", is_preflattened=is_preflattened)
+        raw_texts, boxes = self.extract_text_and_boxes(working_img, enhancement_mode="bilateral", is_preflattened=is_preflattened)
 
         # Check Spatial AAMVA fields first
         aamva_fields = self.extract_spatial_aamva_fields(boxes, province=prov)
         if aamva_fields.get("license_number") and aamva_fields["license_number"] not in raw_texts:
             raw_texts.append(aamva_fields["license_number"])
 
+        aamva_surname = (aamva_fields.get("surname") or "").strip()
+        aamva_given = (aamva_fields.get("given_name") or "").strip()
+        aamva_full_name = f"{aamva_given} {aamva_surname}".strip() if (aamva_surname or aamva_given) else None
+
         def compute_all_scores(lines: List[str]):
-            s_name, m_name = self._match_name(lines, name)
+            s_name, m_name = self._match_name(lines, name, aamva_name=aamva_full_name)
             s_id, m_id = self._match_dl_number(lines, dl_number, province=prov, surname=surname)
             s_dob, m_dob = self._match_date(lines, dob)
             s_exp, m_exp = self._match_date(lines, exp)
@@ -552,7 +777,7 @@ class DrivingLicenseOCREngine:
             or (exp and score_exp < threshold_exp)
         ):
 
-            upscaled = upscale_and_sharpen(img_bgr, scale=2.0, max_dim=settings.ocr_working_max_dim)
+            upscaled = upscale_and_sharpen(working_img, scale=2.0, max_dim=settings.ocr_working_max_dim)
             raw_texts_up, _ = self.extract_text_and_boxes(upscaled, enhancement_mode="clahe", is_preflattened=is_preflattened)
 
             (up_name, m_up_name), (up_id, m_up_id), (up_dob, m_up_dob), (up_exp, m_up_exp), up_reg = compute_all_scores(raw_texts_up)
@@ -567,9 +792,12 @@ class DrivingLicenseOCREngine:
         # PASS 3: Adaptive Binarization (Fallback for tough background patterns,
         # same recovery budget as Pass 2.)
         if _within_recovery_budget() and (
-            (dl_number and score_id < threshold_dl) or (name and score_name < threshold_name)
+            (dl_number and score_id < threshold_dl)
+            or (name and score_name < threshold_name)
+            or (dob and score_dob < threshold_dob)
+            or (exp and score_exp < threshold_exp)
         ):
-            raw_texts_bin, _ = self.extract_text_and_boxes(img_bgr, enhancement_mode="adaptive", is_preflattened=is_preflattened)
+            raw_texts_bin, _ = self.extract_text_and_boxes(working_img, enhancement_mode="adaptive", is_preflattened=is_preflattened)
             (b_name, m_b_name), (b_id, m_b_id), (b_dob, m_b_dob), (b_exp, m_b_exp), b_reg = compute_all_scores(raw_texts_bin)
 
             if b_name > score_name: score_name, matched_name = b_name, m_b_name
@@ -588,6 +816,19 @@ class DrivingLicenseOCREngine:
                 norm_d = f"{m.group(1)}/{m.group(2)}/{m.group(3)}"
                 if norm_d not in all_detected_dates:
                     all_detected_dates.append(norm_d)
+            for m in re.finditer(
+                r'(?:^|[^\w])(\d{1,2})[\s\-\/\.]*(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|JANV|F[EÉ]VR?|MARS|AVR|MAI|JUIN|JUIL|AO[UÛ]T|SEPT|D[EÉ]C)[\s\-\/\.]*(19\d{2}|20\d{2})(?:$|[^\w])',
+                l,
+                re.IGNORECASE,
+            ):
+                day_num = int(m.group(1))
+                mon_str = m.group(2).upper()
+                year_num = int(m.group(3))
+                mon_num = ENGLISH_MONTH_MAP.get(mon_str) or FRENCH_MONTH_MAP.get(mon_str)
+                if mon_num:
+                    norm_d = f"{year_num}/{mon_num:02d}/{day_num:02d}"
+                    if norm_d not in all_detected_dates:
+                        all_detected_dates.append(norm_d)
 
         # Expiry date extraction: AAMVA tag, matched_exp, EXP line, or future date
         card_expiry = aamva_fields.get("expiry_date")
@@ -712,6 +953,37 @@ class DrivingLicenseOCREngine:
         if exp and score_exp < threshold_exp:
             missing_fields.append(f"Expiry Date ({score_exp:.1f}%)")
 
+        # Determine isolated candidate DL number (stripping raw labels like 4d, NO PERMIS)
+        clean_target = clean_dl_string(dl_number)
+        canonical_target, _, _ = repair_provincial_dl(clean_target, province=prov, surname=surname)
+        if not canonical_target:
+            canonical_target = clean_target
+
+        extracted_dl_candidate = canonical_target or clean_target
+        if matched_dl:
+            cleaned_m = clean_dl_string(matched_dl)
+            if canonical_target and canonical_target in cleaned_m:
+                extracted_dl_candidate = canonical_target
+            else:
+                rep_m, _, is_v = repair_provincial_dl(cleaned_m, province=prov, surname=surname)
+                if is_v:
+                    extracted_dl_candidate = rep_m
+
+        # Check deterministic provincial grammar & embedded checksum rules (ON, QC, NS, NL, SK, etc.)
+        prov_rules_passed = True
+        prov_rule_failures = []
+        if dl_number:
+            prov_rules_passed, prov_rule_failures = check_embedded_province_rules(
+                dl_number=extracted_dl_candidate,
+                province=prov,
+                surname=surname,
+                given_names=given_names,
+                dob=card_dob or matched_dob or dob,
+                expiry=card_expiry or matched_exp or exp,
+            )
+            if not prov_rules_passed:
+                missing_fields.append(f"Provincial Grammar Check ({', '.join(prov_rule_failures)})")
+
         passed = len(missing_fields) == 0
 
         # Normalized field-level matching scores (0.0 to 1.0)
@@ -729,21 +1001,50 @@ class DrivingLicenseOCREngine:
         continuous_conf = round(sum(active_sims) / float(len(active_sims)), 3)
 
         # Canonical format of extracted DL
-        canonical_extracted_dl = format_canadian_dl(matched_dl or dl_number, province=prov) if score_id >= threshold_dl else None
+        canonical_extracted_dl = format_canadian_dl(extracted_dl_candidate, province=prov) if score_id >= threshold_dl else None
+
+        # Sanitize privacy-mandated tokens (PHN, citizenship markers)
+        sanitized_raw_lines = [sanitize_privacy_tokens(l) for l in raw_texts if l and sanitize_privacy_tokens(l)]
+        sanitized_address = sanitize_privacy_tokens(card_address) if card_address else None
+
+        card_versions = {
+            "ON": "ON-2011",
+            "QC": "QC-2023",
+            "BC": "BC-2022",
+            "AB": "AB-2026",
+            "SK": "SK-2016",
+            "MB": "MB-2009",
+            "NS": "NS-2017",
+            "NB": "NB-2017",
+            "NL": "NL-2018",
+            "PE": "PE-2017",
+            "YT": "YT-2024",
+            "NT": "NT-2020",
+            "NU": "NU-2008",
+        }
+        card_version = card_versions.get(prov, f"{prov}-STD")
 
         if passed:
             details = f"Name Match: {score_name:.1f}% | DL Match: {score_id:.1f}% | DOB Match: {score_dob:.1f}% | Expiry Match: {score_exp:.1f}% | All Canadian criteria met."
         else:
             details = f"Name Match: {score_name:.1f}% | DL Match: {score_id:.1f}% | DOB Match: {score_dob:.1f}% | Expiry Match: {score_exp:.1f}% | Low similarity fields: {', '.join(missing_fields)}"
 
+        # Name resolution:
+        if score_name >= threshold_name:
+            final_extracted_name = matched_name or aamva_full_name or personal_info.full_name
+        else:
+            # Verification failed: NEVER mirror personal_info.full_name!
+            card_cand = matched_name if (matched_name and name and matched_name.strip().upper() != name.strip().upper()) else None
+            final_extracted_name = aamva_full_name or card_cand or None
+
         return LicenseOcrResult(
             passed=passed,
             extracted_dl_number=canonical_extracted_dl,
-            extracted_name=matched_name or (personal_info.full_name if score_name >= threshold_name else None),
+            extracted_name=final_extracted_name,
             extracted_dob=card_dob or matched_dob or (personal_info.date_of_birth if score_dob >= threshold_dob else None),
             extracted_expiry=card_expiry or matched_exp or (license_details.license_expiry_date if score_exp >= threshold_exp else None),
             extracted_province=prov if score_region >= settings.region_gate_score else None,
-            extracted_address=card_address,
+            extracted_address=sanitized_address,
             extracted_gender=card_gender,
             extracted_class=card_class,
             extracted_issue_date=card_issue,
@@ -758,14 +1059,21 @@ class DrivingLicenseOCREngine:
             driver_age_valid=driver_age_valid,
             confidence=continuous_conf,
             details=details,
-            raw_ocr_lines=raw_texts,
+            raw_ocr_lines=sanitized_raw_lines,
             missing_fields=[re.sub(r'\s*\(\d+.*?\)', '', f).strip() for f in missing_fields],
             confidence_proof={
                 "stage_verdict": "PASSED" if passed else "REJECTED",
                 "province": prov,
+                "card_version": card_version,
+                "provincial_rules_passed": prov_rules_passed,
+                "rule_discrepancies": prov_rule_failures,
                 "metrics": metrics,
                 "reason": details,
             },
+            jurisdiction=prov,
+            card_version=card_version,
+            number_rules_pass=prov_rules_passed,
+            rule_discrepancies=prov_rule_failures,
         )
 
 

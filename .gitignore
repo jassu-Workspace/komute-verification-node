@@ -34,3 +34,24 @@ backend/storage/uploads/previews/*
 
 
 .env
+
+# Scratch & temporary test progress caches
+backend/*progress*.json
+backend/*results*.json
+test_search.py
+
+# Regional brutal test generation folders (1GB+ synthetic benchmark)
+backend/test_images/AB/
+backend/test_images/BC/
+backend/test_images/MB/
+backend/test_images/NB/
+backend/test_images/NL/
+backend/test_images/NS/
+backend/test_images/NT/
+backend/test_images/NU/
+backend/test_images/ON/
+backend/test_images/PE/
+backend/test_images/QC/
+backend/test_images/SK/
+backend/test_images/YT/
+backend/test_images/ground_truth_all.json

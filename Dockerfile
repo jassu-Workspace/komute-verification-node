@@ -23,11 +23,19 @@ RUN mkdir -p /app/backend/storage/uploads/drivers \
              /app/backend/storage/uploads/previews \
              /app/backend/uploads
 
+# Create non-root unprivileged service account
+RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser && \
+    chown -R appuser:appuser /app
+
 # Environment variables (Render dynamically injects PORT)
 ENV PORT=8080
 ENV HOST=0.0.0.0
 ENV ENVIRONMENT=production
 ENV PYTHONUNBUFFERED=1
+ENV ENABLE_API_KEY_AUTH=true
+
+# Switch container execution to non-root user
+USER appuser
 
 # Expose default port
 EXPOSE 8080

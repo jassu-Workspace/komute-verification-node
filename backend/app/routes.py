@@ -1,10 +1,11 @@
+import asyncio
 import os
 from pathlib import Path
 import time
 from datetime import datetime, timezone
 import logging
 from typing import Optional
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import HTMLResponse
 from app.config import settings
 from app.schemas import (
@@ -17,7 +18,13 @@ from app.schemas import (
     VlmDiagnosticsResponse,
 )
 
-from app.security import check_rate_limit, verify_api_key
+from app.security import (
+    check_rate_limit,
+    validate_identifier,
+    verify_api_key,
+    verify_artifact_token,
+    verify_driver_ownership,
+)
 from core.face_privacy_cropper import face_privacy_cropper
 from core.image_utils import (
     compress_and_normalize_base64,
@@ -29,6 +36,9 @@ from core.pipeline import pipeline_engine
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Hardware Concurrency Governor: Limit concurrent heavy verifications (aligned with 20% budget)
+_VERIFICATION_SEMAPHORE = asyncio.Semaphore(settings.max_concurrent_verifications)
 
 
 @router.post(
@@ -42,7 +52,22 @@ async def verify_driver(
     request: VerificationRequest,
     background_tasks: BackgroundTasks,
 ) -> VerificationResponse:
-    """Execute end-to-end multi-stage driver verification pipeline."""
+    """Execute end-to-end multi-stage driver verification pipeline bounded by hardware budget governor."""
+    # Step 1: Wait to acquire semaphore slot within concurrency queue timeout
+    try:
+        async with asyncio.timeout(settings.pipeline_concurrency_timeout_seconds):
+            await _VERIFICATION_SEMAPHORE.acquire()
+    except (asyncio.TimeoutError, TimeoutError):
+        logger.warning(
+            f"Verification queue timeout ({settings.pipeline_concurrency_timeout_seconds}s) reached for request '{request.request_id}' (operating at 20% hardware budget capacity limit)"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Verification pipeline is currently operating at maximum capacity. Please retry shortly.",
+            headers={"Retry-After": "5"},
+        )
+
+    # Step 2: Execute verification under the pipeline SLA budget (45s), guaranteed semaphore release in finally
     try:
         response = await pipeline_engine.execute_verification(request, background_tasks=background_tasks)
         return response
@@ -52,6 +77,8 @@ async def verify_driver(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Verification pipeline failed: {str(e)}",
         )
+    finally:
+        _VERIFICATION_SEMAPHORE.release()
 
 
 @router.post(
@@ -167,6 +194,21 @@ async def compress_image_endpoint(
     }
 
     return Response(content=compressed_bytes, media_type=mime_type, headers=headers)
+
+
+@router.get(
+    "/api/v1/auth/status",
+    summary="Operator Auth Status Discovery",
+    description="Allows dashboard to detect whether API key authentication is enabled and retrieve safe prefix hint.",
+    include_in_schema=False,
+)
+async def get_auth_status():
+    """Return public authentication requirement and safe key prefix hint."""
+    return {
+        "auth_enabled": settings.enable_api_key_auth,
+        "header_name": "X-API-Key",
+        "key_hint": f"{settings.api_secret_key[:12]}..." if settings.api_secret_key else None,
+    }
 
 
 @router.get(
@@ -381,16 +423,22 @@ async def ping():
     "/api/v1/telemetry/system",
     summary="System Vitals, Libraries & AI Model Matrix",
     description="Returns detailed segregated telemetry on hardware vitals, installed libraries, AI models, and active pipeline configuration.",
+    dependencies=[Depends(verify_api_key), Depends(check_rate_limit)],
 )
 async def get_system_telemetry():
     """Retrieve segregated system status, library versions, and AI model health."""
     from core.telemetry_service import telemetry_service
-    return {
+    telemetry = {
         "vitals": telemetry_service.get_system_vitals(),
         "libraries": telemetry_service.get_libraries_status(),
         "ai_models": telemetry_service.get_ai_models_status(),
         "pipeline_config": telemetry_service.get_pipeline_configuration(),
     }
+    # Sanitize absolute server paths in model information for defense-in-depth
+    for model in telemetry.get("ai_models", []):
+        if "model_path" in model and model["model_path"]:
+            model["model_path"] = Path(model["model_path"]).name
+    return telemetry
 
 
 @router.get(
@@ -412,8 +460,16 @@ async def get_verification_sessions(limit: int = settings.telemetry_default_limi
     description="Retrieve granular stage-by-stage outputs, raw model responses, and generated artifacts for a session.",
     dependencies=[Depends(verify_api_key), Depends(check_rate_limit)],
 )
-async def get_session_detail(driver_id: str, request_id: str):
+async def get_session_detail(
+    driver_id: str,
+    request_id: str,
+    x_driver_id: Optional[str] = Header(None, alias="X-Driver-ID"),
+):
     """Retrieve detailed session audit including stage results, VLM outputs, and files."""
+    # Enforce driver isolation boundary and format constraints
+    verify_driver_ownership(driver_id, x_driver_id)
+    validate_identifier(request_id, "request_id")
+
     from storage.storage import storage_manager
     detail = storage_manager.get_session_details(driver_id=driver_id, request_id=request_id)
     if not detail:
@@ -421,6 +477,19 @@ async def get_session_detail(driver_id: str, request_id: str):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Verification session for driver '{driver_id}' and request '{request_id}' not found.",
         )
+
+    # Sanitize absolute filesystem paths inside storage_structure for defense-in-depth
+    if "storage_structure" in detail and isinstance(detail["storage_structure"], dict):
+        struct = detail["storage_structure"]
+        for key in ["session_directory", "originals_folder", "original_folder", "compressed_folder", "cropped_folder"]:
+            if key in struct and struct[key]:
+                struct[key] = Path(struct[key]).name
+        for group in ["original_files", "compressed_files", "cropped_files"]:
+            if group in struct and isinstance(struct[group], dict):
+                for item in struct[group].values():
+                    if isinstance(item, dict) and "absolute_path" in item:
+                        item.pop("absolute_path", None)
+
     return detail
 
 
@@ -442,17 +511,34 @@ async def run_diagnostics_self_test():
     description="Securely streams saved originals, compressed WebP images, and cropped faces.",
     dependencies=[Depends(verify_api_key), Depends(check_rate_limit)],
 )
-async def get_storage_file(file_path: str):
-    """Serve image files from uploads directory with traversal protection."""
+async def get_storage_file(
+    file_path: str,
+    x_driver_id: Optional[str] = Header(None, alias="X-Driver-ID"),
+    token: Optional[str] = Query(None, description="Time-limited HMAC signed download token"),
+):
+    """Serve image files from uploads directory with traversal, token, and cross-driver protection."""
     from pathlib import Path
     from fastapi.responses import FileResponse
+
+    # Token-based download verification
+    if token:
+        if not verify_artifact_token(file_path, token):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired download token.",
+            )
+
+    # Cross-driver isolation: drivers/<target_driver>/...
+    path_obj = Path(file_path)
+    parts = path_obj.parts
+    if len(parts) >= 2 and parts[0] == "drivers":
+        target_driver = parts[1]
+        verify_driver_ownership(target_driver, x_driver_id)
 
     base_dir = settings.uploads_root
     target_file = (base_dir / file_path).resolve()
 
-    # Prevent directory traversal.
-    # NOTE: the historical check used str(target).startswith(str(base_dir)),
-    # which accepts sibling directories such as "storage/uploads_evil/".
+    # Prevent directory traversal
     try:
         target_file.relative_to(base_dir)
     except ValueError:
@@ -472,4 +558,5 @@ async def get_storage_file(file_path: str):
     }
     media_type = mime_map.get(ext, "application/octet-stream")
     return FileResponse(path=str(target_file), media_type=media_type)
+
 

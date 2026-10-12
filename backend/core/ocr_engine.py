@@ -1,23 +1,21 @@
 import os
-
-# Clamp CPU threads globally to prevent 98% CPU spike and maintain smooth multithreading
-os.environ.setdefault("OMP_NUM_THREADS", "2")
-os.environ.setdefault("OPENBLAS_NUM_THREADS", "2")
-os.environ.setdefault("MKL_NUM_THREADS", "2")
-os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "2")
-os.environ.setdefault("NUMEXPR_NUM_THREADS", "2")
-os.environ.setdefault("ORT_INTRA_OP_NUM_THREADS", "2")
-os.environ.setdefault("ORT_INTER_OP_NUM_THREADS", "1")
-
 import logging
 import threading
 from typing import Optional
 import cv2
+
+try:
+    from core.hardware_profile import apply_hardware_acceleration
+    _hw_prof = apply_hardware_acceleration()
+except Exception:
+    os.environ.setdefault("OMP_NUM_THREADS", "4")
+    os.environ.setdefault("OPENBLAS_NUM_THREADS", "4")
+    os.environ.setdefault("MKL_NUM_THREADS", "4")
+    os.environ.setdefault("ORT_INTRA_OP_NUM_THREADS", "4")
+    cv2.setNumThreads(4)
+
 from rapidocr_onnxruntime import RapidOCR
-
 from app.config import settings
-
-cv2.setNumThreads(2)
 
 logger = logging.getLogger(__name__)
 

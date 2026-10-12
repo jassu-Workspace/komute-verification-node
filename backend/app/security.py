@@ -32,16 +32,23 @@ async def verify_api_key(
         )
 
 
+import hashlib
+import hmac
+import re
+
+IDENTIFIER_REGEX = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
 async def check_rate_limit(request: Request) -> None:
-    """In-memory sliding window rate limiting per client IP with reverse-proxy support and bounded cache."""
-    # Extract true client IP behind reverse proxy (Render, Cloudflare, AWS)
+    """In-memory sliding window rate limiting per client IP with reverse-proxy trust validation and bounded cache."""
+    direct_ip = request.client.host if (request.client and request.client.host) else "unknown"
+
+    # Only honor X-Forwarded-For if caller connection originates from a trusted reverse proxy
     forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
+    if forwarded and direct_ip.lower() in settings.trusted_proxy_set:
         client_ip = forwarded.split(",")[0].strip()
-    elif request.client and request.client.host:
-        client_ip = request.client.host
     else:
-        client_ip = "unknown"
+        client_ip = direct_ip
 
     current_time = time.time()
     window_start = current_time - settings.rate_limit_window_seconds
@@ -63,6 +70,58 @@ async def check_rate_limit(request: Request) -> None:
         )
 
     _request_records[client_ip].append(current_time)
+
+
+def validate_identifier(identifier: str, field_name: str = "identifier") -> str:
+    """Validate identifier contains only safe alphanumeric, hyphen, and underscore characters."""
+    if not identifier or not IDENTIFIER_REGEX.match(identifier):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid {field_name} format. Permitted characters: [A-Za-z0-9_-]",
+        )
+    return identifier
+
+
+def verify_driver_ownership(target_driver_id: str, caller_driver_id: Optional[str]) -> None:
+    """
+    Enforce driver isolation boundary.
+    If caller asserts a driver identity via X-Driver-ID header, verify it matches target driver.
+    """
+    validate_identifier(target_driver_id, "driver_id")
+    if caller_driver_id:
+        validate_identifier(caller_driver_id, "X-Driver-ID")
+        if caller_driver_id != target_driver_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied: Caller driver '{caller_driver_id}' cannot access records for '{target_driver_id}'.",
+            )
+
+
+def generate_artifact_token(file_path: str, expires_in_seconds: int = 3600) -> str:
+    """Generate time-limited HMAC-SHA256 signature token for secure artifact retrieval."""
+    secret = (settings.api_secret_key or "kmt_default_secure_secret").encode("utf-8")
+    expires_at = int(time.time()) + expires_in_seconds
+    msg = f"{file_path}:{expires_at}".encode("utf-8")
+    sig = hmac.new(secret, msg, hashlib.sha256).hexdigest()
+    return f"{sig}.{expires_at}"
+
+
+def verify_artifact_token(file_path: str, token: Optional[str]) -> bool:
+    """Verify time-limited HMAC-SHA256 signature token."""
+    if not token or "." not in token:
+        return False
+    try:
+        sig, expires_at_str = token.split(".", 1)
+        expires_at = int(expires_at_str)
+        if time.time() > expires_at:
+            return False
+        secret = (settings.api_secret_key or "kmt_default_secure_secret").encode("utf-8")
+        msg = f"{file_path}:{expires_at}".encode("utf-8")
+        expected_sig = hmac.new(secret, msg, hashlib.sha256).hexdigest()
+        return secrets.compare_digest(sig, expected_sig)
+    except Exception:
+        return False
+
 
 
 def mask_pii(text: Optional[str], show_last_chars: int = 4) -> str:

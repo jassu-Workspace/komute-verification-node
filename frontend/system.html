@@ -3,240 +3,738 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Komüte Telemetry Hub</title>
+  <title>Komüte Telemetry Hub // AI &amp; CV Matrix</title>
   <meta name="description" content="Deep system telemetry, multi-stage AI model inspector, and real-time mathematical confidence justification engine." />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --bg: #09090b;
-      --surface: #18181b;
-      --surface-elevated: #27272a;
-      --surface-hover: #27272a;
-      --border: rgba(255, 255, 255, 0.1);
-      --border-focus: #818cf8;
-      --text: #fafafa;
-      --text-muted: #a1a1aa;
-      --text-dim: #71717a;
-      --green: #34d399;
-      --green-bg: rgba(52, 211, 153, 0.1);
-      --red: #f87171;
-      --red-bg: rgba(248, 113, 113, 0.1);
-      --blue: #60a5fa;
-      --amber: #fbbf24;
-      --amber-bg: rgba(251, 191, 36, 0.1);
-      --cyan: #22d3ee;
-      --cyan-bg: rgba(34, 211, 238, 0.1);
-      --purple: #c084fc;
-      --purple-bg: rgba(192, 132, 252, 0.1);
-      --accent: #6366f1;
-      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      --font-mono: 'JetBrains Mono', monospace;
+      --bg: #090a0f;
+      --surface: #10121a;
+      --surface-raised: #161924;
+      --surface-hover: #1c202e;
+      --border: #232738;
+      --border-subtle: #191c28;
+      --border-focus: #4f46e5;
+      
+      --text: #f3f4f6;
+      --text-muted: #9ca3af;
+      --text-dim: #64748b;
+      
+      --accent: #4f46e5;
+      --accent-hover: #4338ca;
+      --accent-glow: rgba(79, 70, 229, 0.15);
+      
+      --emerald: #10b981;
+      --emerald-bg: rgba(16, 185, 129, 0.08);
+      --emerald-border: rgba(16, 185, 129, 0.25);
+      
+      --crimson: #f43f5e;
+      --crimson-bg: rgba(244, 63, 94, 0.08);
+      --crimson-border: rgba(244, 63, 94, 0.25);
+      
+      --amber: #f59e0b;
+      --amber-bg: rgba(245, 158, 11, 0.08);
+      --amber-border: rgba(245, 158, 11, 0.25);
+      
+      --cyan: #06b6d4;
+      
+      --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
       background-color: var(--bg);
-      background-image: 
-        radial-gradient(circle at 15% 50%, rgba(99, 102, 241, 0.08), transparent 25%),
-        radial-gradient(circle at 85% 30%, rgba(59, 130, 246, 0.08), transparent 25%);
       color: var(--text);
       font-family: var(--font-sans);
       min-height: 100vh;
-      line-height: 1.6;
-      font-size: 14px;
+      line-height: 1.5;
+      font-size: 13.5px;
       -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
 
-    .container { max-width: 1400px; margin: 0 auto; padding: 2.5rem 2rem; }
-
+    /* Architectural Header */
     header {
-      display: flex; justify-content: space-between; align-items: center;
-      margin-bottom: 2.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--border);
-    }
-    .brand-section { display: flex; align-items: center; gap: 1.5rem; }
-    .brand { display: flex; align-items: center; gap: 1rem; text-decoration: none; color: var(--text); }
-    .brand-logo {
-      width: 36px; height: 36px;
-      background: linear-gradient(135deg, #6366f1, #8b5cf6);
-      border-radius: 10px; display: flex; align-items: center; justify-content: center;
-      font-weight: 700; font-size: 1.1rem; color: #fff;
-      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
-    }
-    .brand-title { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.02em; }
-    .brand-subtitle { font-size: 0.8rem; color: var(--text-muted); }
-
-    .nav-links {
-      display: flex; gap: 0.5rem; background: rgba(255, 255, 255, 0.03);
-      padding: 0.35rem; border-radius: 10px; border: 1px solid var(--border);
-    }
-    .nav-link {
-      padding: 0.5rem 1rem; font-size: 0.85rem; font-weight: 500; color: var(--text-muted);
-      text-decoration: none; border-radius: 6px; transition: all 0.2s ease;
-    }
-    .nav-link:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
-    .nav-link.active { color: #fff; background: var(--surface-elevated); box-shadow: 0 2px 8px rgba(0,0,0,0.2); border: 1px solid var(--border); }
-
-    .pulse-badge {
-      display: flex; align-items: center; gap: 0.5rem; font-size: 0.78rem; font-weight: 600;
-      padding: 0.35rem 0.75rem; border-radius: 9999px; background: var(--green-bg); color: var(--green); border: 1px solid rgba(52, 211, 153, 0.25);
-    }
-    .pulse-dot {
-      width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite;
-    }
-    @keyframes pulse {
-      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7); }
-      70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(52, 211, 153, 0); }
-      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+      height: 58px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 1.5rem;
+      position: sticky;
+      top: 0;
+      z-index: 50;
     }
 
-    .btn {
-      padding: 0.5rem 1rem; font-size: 0.85rem; font-weight: 600; border-radius: 6px; cursor: pointer;
-      border: 1px solid var(--border); background: var(--surface-elevated); color: var(--text);
-      transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 0.4rem;
+    .brand-group {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
     }
-    .btn:hover { background: var(--surface-hover); border-color: rgba(255, 255, 255, 0.2); }
-    
-    .view-tabs { display: flex; gap: 0.75rem; margin-bottom: 2rem; border-bottom: 1px solid var(--border); padding-bottom: 1rem; }
-    .tab-btn {
-      padding: 0.75rem 1.25rem; font-size: 0.9rem; font-weight: 600; color: var(--text-muted); background: transparent;
-      border: none; border-radius: 8px; cursor: pointer; transition: all 0.2s ease;
-    }
-    .tab-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.04); }
-    .tab-btn.active { color: #fff; background: var(--surface-elevated); border: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2); }
-    
-    .section-title { font-size: 1.15rem; font-weight: 700; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem; }
-    
-    /* Vitals */
-    .vitals-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; margin-bottom: 2.5rem; }
-    .vital-card {
-      background: rgba(24, 24, 27, 0.6); backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem;
-      position: relative; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.15); transition: transform 0.2s;
-    }
-    .vital-card:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.15); }
-    .vital-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, #6366f1, #a855f7); opacity: 0.9; }
-    .vital-label { font-size: 0.8rem; text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; color: var(--text-dim); margin-bottom: 0.5rem; }
-    .vital-value { font-size: 1.75rem; font-weight: 700; color: #fff; letter-spacing: -0.02em; margin-bottom: 0.5rem; }
-    .vital-subtext { font-size: 0.85rem; color: var(--text-muted); font-family: var(--font-mono); }
 
-    /* Models */
-    .models-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 1.25rem; margin-bottom: 2.5rem; }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+      color: var(--text);
+    }
+
+    .brand-mark {
+      width: 28px;
+      height: 28px;
+      background: var(--surface-raised);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent);
+    }
+
+    .brand-text {
+      display: flex;
+      align-items: baseline;
+      gap: 0.5rem;
+    }
+
+    .brand-name {
+      font-weight: 700;
+      font-size: 0.95rem;
+      letter-spacing: -0.01em;
+      color: #fff;
+    }
+
+    .brand-node-chip {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      padding: 0.1rem 0.35rem;
+      background: var(--surface-raised);
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+    }
+
+    .nav-tabs {
+      display: flex;
+      gap: 0.25rem;
+      background: var(--bg);
+      padding: 0.2rem;
+      border-radius: 6px;
+      border: 1px solid var(--border-subtle);
+    }
+
+    .nav-tab {
+      padding: 0.35rem 0.85rem;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      text-decoration: none;
+      border-radius: 4px;
+      transition: color 120ms ease, background 120ms ease;
+    }
+
+    .nav-tab:hover {
+      color: var(--text);
+      background: var(--surface-raised);
+    }
+
+    .nav-tab.active {
+      color: #fff;
+      background: var(--surface-raised);
+      font-weight: 600;
+      border: 1px solid var(--border);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .api-key-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .api-key-icon {
+      position: absolute;
+      left: 0.65rem;
+      color: var(--text-dim);
+      pointer-events: none;
+    }
+
+    .api-key-input {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.35rem 0.65rem 0.35rem 1.85rem;
+      color: var(--text);
+      width: 175px;
+      outline: none;
+      transition: border-color 120ms ease, width 150ms ease;
+    }
+
+    .api-key-input:focus {
+      border-color: var(--border-focus);
+      width: 210px;
+    }
+
+    .btn-action {
+      background: var(--surface-raised);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.35rem 0.75rem;
+      font-size: 0.78rem;
+      font-weight: 500;
+      border-radius: 6px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: all 120ms ease;
+    }
+
+    .btn-action:hover {
+      background: var(--surface-hover);
+      border-color: var(--border-focus);
+    }
+
+    .btn-action:active {
+      transform: scale(0.98);
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--emerald);
+      background: var(--emerald-bg);
+      border: 1px solid var(--emerald-border);
+      padding: 0.3rem 0.65rem;
+      border-radius: 4px;
+      transition: all 120ms ease;
+    }
+
+    .status-badge.warn {
+      color: var(--amber);
+      background: var(--amber-bg);
+      border-color: var(--amber-border);
+    }
+
+    .status-badge.fail {
+      color: var(--crimson);
+      background: var(--crimson-bg);
+      border-color: var(--crimson-border);
+    }
+
+    .status-indicator {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--emerald);
+    }
+
+    .input-warn {
+      border-color: var(--amber) !important;
+      box-shadow: 0 0 0 1px var(--amber-bg);
+    }
+
+    .input-error {
+      border-color: var(--crimson) !important;
+      box-shadow: 0 0 0 1px var(--crimson-bg);
+    }
+
+    /* Container */
+    .container {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 1.5rem;
+    }
+
+    /* Segmented Navigation */
+    .view-switcher {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.75rem;
+    }
+
+    .switch-btn {
+      padding: 0.45rem 1rem;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      transition: all 120ms ease;
+    }
+
+    .switch-btn:hover {
+      color: var(--text);
+      background: var(--surface);
+    }
+
+    .switch-btn.active {
+      color: #fff;
+      background: var(--surface);
+      border-color: var(--border);
+    }
+
+    .section-title {
+      font-size: 0.88rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      color: #fff;
+    }
+
+    /* Vitals Metric Cards */
+    .vitals-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .vital-tile {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .vital-tile::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: var(--accent);
+    }
+
+    .vital-header {
+      font-size: 0.72rem;
+      font-family: var(--font-mono);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-dim);
+      margin-bottom: 0.4rem;
+    }
+
+    .vital-stat {
+      font-size: 1.75rem;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      letter-spacing: -0.02em;
+      color: #fff;
+      margin-bottom: 0.35rem;
+    }
+
+    .vital-footer {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    /* AI / CV Models Grid */
+    .models-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
     .model-card {
-      background: rgba(24, 24, 27, 0.6); backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem;
-      display: flex; flex-direction: column; justify-content: space-between; gap: 1rem; transition: transform 0.2s;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 0.85rem;
     }
-    .model-card:hover { border-color: rgba(255, 255, 255, 0.2); transform: translateY(-2px); }
-    .model-header { display: flex; justify-content: space-between; align-items: flex-start; }
-    .model-name { font-size: 1.05rem; font-weight: 700; color: #fff; }
-    .model-stage { font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; font-weight: 600; margin-top: 0.25rem; }
-    .model-badge { font-size: 0.75rem; font-weight: 700; padding: 0.3rem 0.6rem; border-radius: 6px; white-space: nowrap; background: var(--green-bg); color: var(--green); border: 1px solid rgba(52, 211, 153, 0.3); }
 
-    .model-body { background: rgba(0, 0, 0, 0.3); border-radius: 8px; padding: 1rem; border: 1px solid rgba(255, 255, 255, 0.05); font-size: 0.85rem; }
-    .model-row { display: flex; margin-bottom: 0.5rem; }
-    .model-row:last-child { margin-bottom: 0; }
-    .model-row-key { width: 120px; color: var(--text-dim); font-weight: 600; }
-    .model-row-val { color: var(--text-muted); font-family: var(--font-mono); }
+    .model-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
 
-    .json-code-box { background: #000; border: 1px solid var(--border); border-radius: 8px; padding: 1rem; font-family: var(--font-mono); font-size: 0.85rem; color: #a5b4fc; overflow-x: auto; white-space: pre-wrap; box-shadow: inset 0 2px 10px rgba(0,0,0,0.5); }
-    
+    .model-name {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: -0.01em;
+    }
+
+    .model-tag {
+      font-size: 0.72rem;
+      font-family: var(--font-mono);
+      color: var(--text-dim);
+      margin-top: 0.15rem;
+    }
+
+    .model-badge {
+      font-size: 0.7rem;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      background: var(--emerald-bg);
+      color: var(--emerald);
+      border: 1px solid var(--emerald-border);
+    }
+
+    .model-details {
+      background: var(--bg);
+      border-radius: 6px;
+      padding: 0.85rem;
+      border: 1px solid var(--border-subtle);
+      font-size: 0.8rem;
+    }
+
+    .model-kv-row {
+      display: flex;
+      margin-bottom: 0.4rem;
+    }
+
+    .model-kv-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .model-k {
+      width: 110px;
+      color: var(--text-dim);
+      font-weight: 500;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+    }
+
+    .model-v {
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      word-break: break-all;
+    }
+
     /* Telemetry Table */
-    .telemetry-table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.85rem; border-radius: 8px; overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(0, 0, 0, 0.2); }
-    .telemetry-table th { background: rgba(255, 255, 255, 0.03); text-align: left; padding: 0.85rem 1rem; color: var(--text-dim); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.05); }
-    .telemetry-table td { padding: 0.85rem 1rem; border-top: 1px solid rgba(255, 255, 255, 0.05); color: var(--text); }
-    .telemetry-table tr.data-row { transition: background 0.2s; cursor: pointer; }
-    .telemetry-table tr.data-row:hover { background: rgba(255,255,255,0.04); }
-    .telemetry-table .decision-badge { padding: 0.25rem 0.6rem; border-radius: 4px; font-weight: 700; font-size: 0.75rem; }
-    .decision-badge.approved { background: var(--green-bg); color: var(--green); border: 1px solid rgba(52,211,153,0.3); }
-    .decision-badge.rejected { background: var(--red-bg); color: var(--red); border: 1px solid rgba(248,113,113,0.3); }
-    
-    .proof-row { display: none; background: rgba(0, 0, 0, 0.4); }
-    .proof-row.open { display: table-row; }
-    .proof-container { padding: 1.5rem; }
-    .proof-title { font-size: 0.9rem; font-weight: 600; color: var(--text); margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+    .telemetry-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+      border-radius: 6px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
 
-    /* Object Tree Renderer */
-    .obj-tree { list-style: none; margin: 0; padding: 0; font-size: 0.85rem; }
-    .obj-tree ul { list-style: none; margin-left: 1rem; border-left: 1px solid rgba(255,255,255,0.1); padding-left: 0.75rem; margin-top: 0.35rem; margin-bottom: 0.35rem; }
-    .obj-tree li { margin-bottom: 0.35rem; }
-    .tree-k { color: var(--text-dim); font-weight: 600; font-family: var(--font-mono); margin-right: 0.5rem; }
+    .telemetry-table th {
+      background: var(--surface-raised);
+      text-align: left;
+      padding: 0.65rem 0.85rem;
+      color: var(--text-dim);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: 0.72rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .telemetry-table td {
+      padding: 0.75rem 0.85rem;
+      border-top: 1px solid var(--border-subtle);
+      color: var(--text);
+    }
+
+    .telemetry-table tr.data-row {
+      cursor: pointer;
+      transition: background 120ms ease;
+    }
+
+    .telemetry-table tr.data-row:hover {
+      background: var(--surface-hover);
+    }
+
+    .decision-chip {
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 0.7rem;
+      font-family: var(--font-mono);
+    }
+
+    .decision-chip.approved {
+      background: var(--emerald-bg);
+      color: var(--emerald);
+      border: 1px solid var(--emerald-border);
+    }
+
+    .decision-chip.rejected {
+      background: var(--crimson-bg);
+      color: var(--crimson);
+      border: 1px solid var(--crimson-border);
+    }
+
+    .proof-drawer {
+      display: none;
+      background: #050608;
+    }
+
+    .proof-drawer.open {
+      display: table-row;
+    }
+
+    .proof-payload-box {
+      padding: 1.25rem;
+      border-top: 1px dashed var(--border);
+      border-bottom: 1px dashed var(--border);
+    }
+
+    .proof-title {
+      font-size: 0.78rem;
+      font-weight: 600;
+      font-family: var(--font-mono);
+      color: var(--text-dim);
+      margin-bottom: 0.75rem;
+      text-transform: uppercase;
+    }
+
+    /* Object Tree */
+    .obj-tree { list-style: none; margin: 0; padding: 0; }
+    .obj-tree ul { list-style: none; margin-left: 1rem; border-left: 1px solid var(--border-subtle); padding-left: 0.65rem; margin-top: 0.25rem; margin-bottom: 0.25rem; }
+    .obj-tree li { margin-bottom: 0.25rem; }
+    .tree-k { color: var(--text-dim); font-weight: 500; font-family: var(--font-mono); margin-right: 0.35rem; }
     .tree-v-str { color: #93c5fd; font-family: var(--font-mono); }
     .tree-v-num { color: #fde047; font-family: var(--font-mono); }
-    .tree-v-bool-t { color: var(--green); font-weight: 700; font-family: var(--font-mono); }
-    .tree-v-bool-f { color: var(--red); font-weight: 700; font-family: var(--font-mono); }
+    .tree-v-bool-t { color: var(--emerald); font-weight: 600; font-family: var(--font-mono); }
+    .tree-v-bool-f { color: var(--crimson); font-weight: 600; font-family: var(--font-mono); }
     .tree-v-null { color: var(--text-muted); font-style: italic; font-family: var(--font-mono); }
-    
-    .data-card { background: rgba(0, 0, 0, 0.2); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; }
+
+    .data-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+    }
+
+    /* Diagnostics Popover */
+    .modal-backdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+
+    .modal-dialog {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      width: 100%;
+      max-width: 640px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .modal-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #fff;
+    }
   </style>
 </head>
 <body>
 
-  <div class="container">
-    <header>
-      <div class="brand-section">
-        <a href="/dashboard" class="brand">
-          <div class="brand-logo">K</div>
-          <div>
-            <div class="brand-title">Komüte Telemetry Hub</div>
-            <div class="brand-subtitle">AI & CV Engine Matrix</div>
-          </div>
-        </a>
-        <div class="nav-links">
-          <a href="/dashboard" class="nav-link">Verifier Studio</a>
-          <a href="/system" class="nav-link active">System Telemetry</a>
+  <!-- Global Header -->
+  <header>
+    <div class="brand-group">
+      <a href="/dashboard" class="brand">
+        <div class="brand-mark">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+          </svg>
         </div>
-      </div>
-      <div style="display: flex; gap: 1rem; align-items: center;">
-        <button class="btn" onclick="runSelfTest()">⚙️ Run System Diagnostics</button>
-        <div class="pulse-badge"><span class="pulse-dot"></span> System Live</div>
-      </div>
-    </header>
-
-    <div class="view-tabs">
-      <button class="tab-btn active" onclick="switchTab('overview')">System Overview</button>
-      <button class="tab-btn" onclick="switchTab('sessions')">Session Explorer</button>
+        <div class="brand-text">
+          <span class="brand-name">KOMÜTE</span>
+          <span class="brand-node-chip">TELEMETRY-HUB</span>
+        </div>
+      </a>
+      <nav class="nav-tabs">
+        <a href="/dashboard" class="nav-tab">Verifier Studio</a>
+        <a href="/system" class="nav-tab active">System Telemetry</a>
+      </nav>
     </div>
 
-    <!-- OVERVIEW TAB -->
-    <div id="overview-tab">
-      <div class="section-title">🌐 System Vitals</div>
+    <div class="header-actions">
+      <div class="api-key-wrapper">
+        <span class="api-key-icon">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+        </span>
+        <input type="password" id="apiKeyInput" class="api-key-input" placeholder="Operator API Key" title="API Secret Key stored securely in sessionStorage" />
+      </div>
+      <button class="btn-action" onclick="runSelfTest()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+        </svg>
+        Diagnostics
+      </button>
+      <div class="status-badge" id="authBadge" title="API Authentication State">
+        <span class="status-indicator" id="authIndicator"></span>
+        <span id="authBadgeText">TELEMETRY LIVE</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Container -->
+  <main class="container">
+
+    <!-- Segmented Navigation -->
+    <div class="view-switcher">
+      <button class="switch-btn active" id="tabOverview" onclick="switchTab('overview')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7"/>
+          <rect x="14" y="3" width="7" height="7"/>
+          <rect x="14" y="14" width="7" height="7"/>
+          <rect x="3" y="14" width="7" height="7"/>
+        </svg>
+        System Overview
+      </button>
+      <button class="switch-btn" id="tabSessions" onclick="switchTab('sessions')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="8" y1="6" x2="21" y2="6"/>
+          <line x1="8" y1="12" x2="21" y2="12"/>
+          <line x1="8" y1="18" x2="21" y2="18"/>
+          <line x1="3" y1="6" x2="3.01" y2="6"/>
+          <line x1="3" y1="12" x2="3.01" y2="12"/>
+          <line x1="3" y1="18" x2="3.01" y2="18"/>
+        </svg>
+        Verification Sessions
+      </button>
+    </div>
+
+    <!-- Overview Tab -->
+    <section id="overview-tab">
+      <div class="section-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+        Host Machine Vitals
+      </div>
       <div class="vitals-grid" id="vitalsGrid">
-        <div style="color: var(--text-dim); padding: 1rem;">Loading vitals...</div>
+        <div style="color: var(--text-dim); padding: 1rem;">Querying host node metrics...</div>
       </div>
 
-      <div class="section-title">🧠 Core AI / Computer Vision Models</div>
+      <div class="section-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        AI &amp; Computer Vision Engine Pipelines
+      </div>
       <div class="models-grid" id="modelsGrid"></div>
-      
-      <div class="section-title">📦 Loaded AI Libraries & Runtimes</div>
-      <div class="data-card" id="librariesBox">Loading...</div>
-    </div>
 
-    <!-- SESSIONS TAB -->
-    <div id="sessions-tab" style="display: none;">
-      <div class="section-title">🔎 Recent Verifications</div>
-      <div id="sessionsContainer">Loading sessions...</div>
-    </div>
+      <div class="section-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="4 17 10 11 4 5"/>
+          <line x1="12" y1="19" x2="20" y2="19"/>
+        </svg>
+        Loaded Native Runtimes &amp; Frameworks
+      </div>
+      <div class="data-card" id="librariesBox">Querying runtime library versions...</div>
+    </section>
 
-  </div>
+    <!-- Sessions Tab -->
+    <section id="sessions-tab" style="display: none;">
+      <div class="section-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/>
+          <line x1="16" y1="17" x2="8" y2="17"/>
+          <polyline points="10 9 9 9 8 9"/>
+        </svg>
+        Historical Verification Records
+      </div>
+      <div id="sessionsContainer">Loading recent audit sessions...</div>
+    </section>
+
+  </main>
 
   <script>
-    const API_KEY = 'kmt_live_v2_f83jf98a2h4j90xj23';
+    function getApiKey() {
+      return sessionStorage.getItem('kmt_api_key') || '';
+    }
+
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
 
     function switchTab(tab) {
       document.getElementById('overview-tab').style.display = tab === 'overview' ? 'block' : 'none';
       document.getElementById('sessions-tab').style.display = tab === 'sessions' ? 'block' : 'none';
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-      event.target.classList.add('active');
+      document.getElementById('tabOverview').className = 'switch-btn' + (tab === 'overview' ? ' active' : '');
+      document.getElementById('tabSessions').className = 'switch-btn' + (tab === 'sessions' ? ' active' : '');
     }
 
     function renderObjectTree(obj) {
       if (obj === null) return `<span class="tree-v-null">null</span>`;
       if (typeof obj === 'boolean') return obj ? `<span class="tree-v-bool-t">true</span>` : `<span class="tree-v-bool-f">false</span>`;
       if (typeof obj === 'number') return `<span class="tree-v-num">${obj}</span>`;
-      if (typeof obj === 'string') return `<span class="tree-v-str">"${obj}"</span>`;
+      if (typeof obj === 'string') return `<span class="tree-v-str">"${escapeHtml(obj)}"</span>`;
       
-      let html = '<ul>';
+      let html = '<ul class="obj-tree">';
       for (let key in obj) {
-        html += `<li><span class="tree-k">${key}:</span>`;
+        const safeKey = escapeHtml(key);
+        html += `<li><span class="tree-k">${safeKey}:</span>`;
         if (typeof obj[key] === 'object' && obj[key] !== null) {
           html += renderObjectTree(obj[key]);
         } else {
@@ -248,91 +746,157 @@
       return html;
     }
 
-    async function loadTelemetry() {
+    let serverAuthEnabled = true;
+
+    async function checkAuthStatus() {
       try {
-        const res = await fetch('/api/v1/telemetry/system', { headers: { 'X-API-Key': API_KEY }});
-        if (!res.ok) throw new Error("Unauthorized or server error");
+        const res = await fetch('/api/v1/auth/status');
+        if (res.ok) {
+          const data = await res.json();
+          serverAuthEnabled = !!data.auth_enabled;
+        }
+      } catch (_) {}
+      updateAuthBadge();
+    }
+
+    function updateAuthBadge() {
+      const key = getApiKey();
+      const badge = document.getElementById('authBadge');
+      const indicator = document.getElementById('authIndicator');
+      const badgeText = document.getElementById('authBadgeText');
+      const input = document.getElementById('apiKeyInput');
+      if (!badge || !badgeText || !indicator) return;
+
+      if (!serverAuthEnabled) {
+        badge.className = 'status-badge';
+        indicator.style.background = 'var(--emerald)';
+        badgeText.innerText = 'NO AUTH REQUIRED';
+        if (input) input.classList.remove('input-warn', 'input-error');
+        return;
+      }
+
+      if (!key) {
+        badge.className = 'status-badge warn';
+        indicator.style.background = 'var(--amber)';
+        badgeText.innerText = 'KEY REQUIRED';
+        if (input) input.classList.add('input-warn');
+      } else {
+        badge.className = 'status-badge';
+        indicator.style.background = 'var(--emerald)';
+        badgeText.innerText = 'TELEMETRY LIVE';
+        if (input) input.classList.remove('input-warn', 'input-error');
+      }
+    }
+
+    async function loadTelemetry() {
+      const apiKey = getApiKey();
+      updateAuthBadge();
+      const headers = {};
+      if (apiKey) {
+        headers['X-API-Key'] = apiKey;
+      }
+
+      try {
+        const res = await fetch('/api/v1/telemetry/system', { headers });
+        if (res.status === 401) {
+          const badge = document.getElementById('authBadge');
+          const indicator = document.getElementById('authIndicator');
+          const badgeText = document.getElementById('authBadgeText');
+          const input = document.getElementById('apiKeyInput');
+          if (badge) badge.className = 'status-badge fail';
+          if (indicator) indicator.style.background = 'var(--crimson)';
+          if (badgeText) badgeText.innerText = 'INVALID KEY';
+          if (input) input.classList.add('input-error');
+          document.getElementById('vitalsGrid').innerHTML = `<div style="color:var(--amber); grid-column: 1 / -1; padding: 1.25rem; background: var(--amber-bg); border: 1px solid var(--amber-border); border-radius: 6px; font-family: var(--font-mono); font-size: 0.8rem;">OPERATOR AUTHENTICATION REQUIRED: Enter API Key (from .env) in the top-right header input to stream telemetry.</div>`;
+          document.getElementById('sessionsContainer').innerHTML = `<div style="color:var(--amber); padding: 1.25rem; background: var(--amber-bg); border: 1px solid var(--amber-border); border-radius: 6px; font-family: var(--font-mono); font-size: 0.8rem;">OPERATOR AUTHENTICATION REQUIRED: Enter API Key to inspect session audit records.</div>`;
+          return;
+        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to fetch system vitals`);
         const data = await res.json();
         
         // Render Vitals
-        const v = data.vitals;
+        const v = data.vitals || {};
+        const runtime = v.runtime || {};
+        const storage = v.storage || {};
         document.getElementById('vitalsGrid').innerHTML = `
-          <div class="vital-card">
-            <div class="vital-label">Host OS</div>
-            <div class="vital-value">${v.runtime.os_platform || 'Linux'}</div>
-            <div class="vital-subtext">Python ${v.runtime.python_version}</div>
+          <div class="vital-tile">
+            <div class="vital-header">Execution Runtime</div>
+            <div class="vital-stat">${escapeHtml(runtime.os_platform || 'Linux')}</div>
+            <div class="vital-footer">Python ${escapeHtml(runtime.python_version || '-')}</div>
           </div>
-          <div class="vital-card">
-            <div class="vital-label">System Memory</div>
-            <div class="vital-value">${v.runtime.memory_rss_mb ? v.runtime.memory_rss_mb.toFixed(1) : '0'} MB</div>
-            <div class="vital-subtext">Active Resident Set Size</div>
+          <div class="vital-tile">
+            <div class="vital-header">Resident Memory (RSS)</div>
+            <div class="vital-stat">${runtime.memory_rss_mb ? runtime.memory_rss_mb.toFixed(1) : '0'} MB</div>
+            <div class="vital-footer">Active Heap Footprint</div>
           </div>
-          <div class="vital-card">
-            <div class="vital-label">Storage Utilization</div>
-            <div class="vital-value">${v.storage.total_stored_size_formatted}</div>
-            <div class="vital-subtext">${v.storage.total_stored_files} files stored (WebP Optimized)</div>
+          <div class="vital-tile">
+            <div class="vital-header">Encrypted Storage</div>
+            <div class="vital-stat">${escapeHtml(storage.total_stored_size_formatted || '0 B')}</div>
+            <div class="vital-footer">${storage.total_stored_files || 0} artifacts (Lossless WebP)</div>
           </div>
         `;
 
-        // Render Models
-        document.getElementById('modelsGrid').innerHTML = data.ai_models.map(m => `
-          <div class="model-card">
-            <div class="model-header">
-              <div>
-                <div class="model-name">${m.name}</div>
-                <div class="model-stage">${m.category}</div>
+        // Render AI Models
+        if (Array.isArray(data.ai_models)) {
+          document.getElementById('modelsGrid').innerHTML = data.ai_models.map(m => `
+            <div class="model-card">
+              <div class="model-header">
+                <div>
+                  <div class="model-name">${escapeHtml(m.name)}</div>
+                  <div class="model-tag">${escapeHtml(m.category)}</div>
+                </div>
+                <div class="model-badge">${m.ready ? 'ONLINE' : 'STANDBY'}</div>
               </div>
-              <div class="model-badge">${m.ready ? 'ONLINE' : 'STANDBY'}</div>
+              <div class="model-details">
+                <div class="model-kv-row"><div class="model-k">Architecture:</div><div class="model-v">${escapeHtml(m.architecture)}</div></div>
+                <div class="model-kv-row"><div class="model-k">Model Path:</div><div class="model-v">${escapeHtml(m.model_path)}</div></div>
+                <div class="model-kv-row"><div class="model-k">Inference Spec:</div><div class="model-v" style="color:var(--cyan)">${escapeHtml(m.output)}</div></div>
+              </div>
             </div>
-            <div class="model-body">
-              <div class="model-row"><div class="model-row-key">Architecture:</div><div class="model-row-val">${m.architecture}</div></div>
-              <div class="model-row"><div class="model-row-key">Model Path:</div><div class="model-row-val">${m.model_path}</div></div>
-              <div class="model-row"><div class="model-row-key">Output:</div><div class="model-row-val" style="color:var(--cyan)">${m.output}</div></div>
-            </div>
-          </div>
-        `).join('');
+          `).join('');
+        }
 
-        // Render Libraries
+        // Render Native Libraries
         document.getElementById('librariesBox').innerHTML = `<div class="obj-tree">${renderObjectTree(data.libraries)}</div>`;
 
         // Load Sessions
-        const sRes = await fetch('/api/v1/telemetry/sessions', { headers: { 'X-API-Key': API_KEY }});
+        const sRes = await fetch('/api/v1/telemetry/sessions', { headers });
         if (sRes.ok) {
           const sData = await sRes.json();
           let html = `<table class="telemetry-table">
             <thead>
               <tr>
-                <th>Driver ID</th>
+                <th>Driver Identifier</th>
                 <th>Request ID</th>
                 <th>Timestamp</th>
                 <th>Verdict</th>
-                <th>Confidence Score</th>
+                <th>Confidence</th>
                 <th>Latency</th>
               </tr>
             </thead>
             <tbody>`;
             
-          sData.sessions.forEach((s, idx) => {
+          (sData.sessions || []).forEach((s, idx) => {
             const meta = s.custom_metadata || {};
             const decision = meta.verification_decision || meta.decision || (meta.composite_proof && meta.composite_proof.final_decision) || 'UNKNOWN';
             const badgeClass = decision === 'APPROVED' ? 'approved' : 'rejected';
             const score = meta.composite_confidence !== undefined ? ((meta.composite_confidence)*100).toFixed(1) + '%' : 'N/A';
             const latency = meta.execution_time_ms ? Math.round(meta.execution_time_ms) + 'ms' : '-';
-            const dateStr = new Date(s.created_at).toLocaleString();
+            const dateStr = s.created_at ? new Date(s.created_at).toLocaleString() : '-';
             
             html += `
               <tr class="data-row" onclick="toggleProof(${idx})">
-                <td style="font-family:var(--font-mono)">${s.driver_id}</td>
-                <td style="font-family:var(--font-mono); color:var(--text-dim)">${s.request_id}</td>
-                <td>${dateStr}</td>
-                <td><span class="decision-badge ${badgeClass}">${decision}</span></td>
-                <td style="font-family:var(--font-mono); font-weight:600; color:var(--accent)">${score}</td>
-                <td style="font-family:var(--font-mono)">${latency}</td>
+                <td style="font-family:var(--font-mono); font-weight:600;">${escapeHtml(s.driver_id)}</td>
+                <td style="font-family:var(--font-mono); color:var(--text-dim); font-size:0.75rem;">${escapeHtml(s.request_id)}</td>
+                <td style="font-size:0.78rem;">${escapeHtml(dateStr)}</td>
+                <td><span class="decision-chip ${escapeHtml(badgeClass)}">${escapeHtml(decision)}</span></td>
+                <td style="font-family:var(--font-mono); font-weight:600; color:var(--accent);">${escapeHtml(score)}</td>
+                <td style="font-family:var(--font-mono); font-size:0.78rem;">${escapeHtml(latency)}</td>
               </tr>
-              <tr id="proofRow_${idx}" class="proof-row">
+              <tr id="proofRow_${idx}" class="proof-drawer">
                 <td colspan="6">
-                  <div class="proof-container">
-                    <div class="proof-title">📊 Mathematical Proof Matrix</div>
+                  <div class="proof-payload-box">
+                    <div class="proof-title">Mathematical Proof &amp; Verification Trail</div>
                     <div class="data-card obj-tree">
                       ${renderObjectTree(meta.composite_proof || meta)}
                     </div>
@@ -347,37 +911,48 @@
         }
 
       } catch (e) {
-        document.getElementById('vitalsGrid').innerHTML = `<div style="color:var(--red)">Failed to load: ${e.message}</div>`;
+        document.getElementById('vitalsGrid').innerHTML = `<div style="color:var(--crimson); font-family:var(--font-mono); font-size:0.8rem;">TELEMETRY FAULT: ${escapeHtml(e.message)}</div>`;
       }
     }
 
     async function runSelfTest() {
+      const apiKey = getApiKey();
+      const headers = {};
+      if (apiKey) {
+        headers['X-API-Key'] = apiKey;
+      }
+
       try {
-        const res = await fetch('/api/v1/telemetry/self-test', { method: 'POST', headers: { 'X-API-Key': API_KEY }});
+        const res = await fetch('/api/v1/telemetry/self-test', { method: 'POST', headers });
+        if (res.status === 401) {
+          alert("Operator Authentication Required: Enter API Key in the top-right header input.");
+          return;
+        }
         const data = await res.json();
         
         let selfTestHtml = `
-          <div style="text-align:left; font-family:var(--font-sans);">
-            <h3 style="margin-bottom:1rem; color:var(--text);">Diagnostics Report</h3>
-            <div class="obj-tree data-card" style="max-height: 60vh; overflow-y: auto;">
+          <div style="text-align:left;">
+            <div class="obj-tree data-card" style="max-height: 55vh; overflow-y: auto; background: var(--bg);">
               ${renderObjectTree(data)}
             </div>
           </div>
         `;
         
-        // Quick modal overlay replacement for alert
         const m = document.createElement('div');
-        m.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); backdrop-filter:blur(5px); z-index:9999; display:flex; align-items:center; justify-content:center; padding: 2rem;';
+        m.className = 'modal-backdrop';
         m.innerHTML = `
-          <div style="background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:2rem; width:100%; max-width:600px; box-shadow:0 10px 40px rgba(0,0,0,0.5);">
+          <div class="modal-dialog">
+            <div class="modal-header">
+              <div class="modal-title">Subsystem Self-Test Report</div>
+              <button class="btn-action" onclick="this.closest('.modal-backdrop').remove()">Close</button>
+            </div>
             ${selfTestHtml}
-            <button class="btn" style="margin-top:1.5rem;" onclick="this.parentElement.parentElement.remove()">Close Diagnostics</button>
           </div>
         `;
         document.body.appendChild(m);
         
       } catch (e) {
-        alert("Self Test Failed: " + e.message);
+        alert("Diagnostics Failed: " + e.message);
       }
     }
 
@@ -386,12 +961,23 @@
       if (row.classList.contains('open')) {
         row.classList.remove('open');
       } else {
-        document.querySelectorAll('.proof-row').forEach(r => r.classList.remove('open'));
+        document.querySelectorAll('.proof-drawer').forEach(r => r.classList.remove('open'));
         row.classList.add('open');
       }
     }
 
-    // Initialize
+    // Initialize API Key input & sync with sessionStorage
+    const apiKeyInput = document.getElementById('apiKeyInput');
+    if (apiKeyInput) {
+      apiKeyInput.value = sessionStorage.getItem('kmt_api_key') || '';
+      apiKeyInput.addEventListener('input', (e) => {
+        sessionStorage.setItem('kmt_api_key', e.target.value.trim());
+        updateAuthBadge();
+        loadTelemetry();
+      });
+    }
+
+    checkAuthStatus();
     loadTelemetry();
   </script>
 </body>

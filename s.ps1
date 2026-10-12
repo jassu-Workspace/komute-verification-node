@@ -178,7 +178,19 @@ if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot ".env"))) {
     Write-Host " [!] .env not found - server will start with defaults; live VLM keys will be missing." -ForegroundColor Yellow
 }
 
-# 5. Display Endpoints
+# 5. Display Endpoints & Security Status
+$envFile = Join-Path $PSScriptRoot ".env"
+$apiKeyStr = "Disabled"
+if (Test-Path -LiteralPath $envFile) {
+    $envLines = Get-Content $envFile
+    $authLine = $envLines | Where-Object { $_ -match '^\s*ENABLE_API_KEY_AUTH\s*=\s*(.+)$' } | Select-Object -First 1
+    $keyLine = $envLines | Where-Object { $_ -match '^\s*API_SECRET_KEY\s*=\s*(.+)$' } | Select-Object -First 1
+    $isAuth = if ($authLine -and ($authLine -match 'true')) { $true } else { $true }
+    if ($isAuth -and $keyLine) {
+        $apiKeyStr = ($keyLine -replace '^\s*API_SECRET_KEY\s*=\s*', '').Trim()
+    }
+}
+
 Write-Host ""
 Write-Host "----------------------------------------------------------------------" -ForegroundColor DarkGray
 Write-Host "  Available Service Endpoints:" -ForegroundColor White
@@ -186,6 +198,9 @@ Write-Host "  * Interactive Web UI:     http://${HostAddress}:${Port}/dashboard"
 Write-Host "  * Swagger API Docs:       http://${HostAddress}:${Port}/docs" -ForegroundColor Green
 Write-Host "  * Health Check:           http://${HostAddress}:${Port}/health" -ForegroundColor Magenta
 Write-Host "  * Uploads Storage Root:   $uploadsPath" -ForegroundColor DarkCyan
+if ($apiKeyStr -ne "Disabled" -and (-not [string]::IsNullOrWhiteSpace($apiKeyStr))) {
+    Write-Host "  * Operator API Key:       $apiKeyStr" -ForegroundColor Yellow
+}
 Write-Host "----------------------------------------------------------------------" -ForegroundColor DarkGray
 Write-Host ""
 Write-Host " [!] Starting FastAPI server on http://${HostAddress}:${Port} (Press Ctrl+C to stop)..." -ForegroundColor Yellow

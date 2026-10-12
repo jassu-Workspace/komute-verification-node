@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from enum import Enum
+import re
 from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -93,6 +94,15 @@ class VerificationImages(BaseModel):
     license_image_base64: str = Field(..., description="Base64 encoded driving license card image")
     vehicle_photo_base64: str = Field(..., description="Base64 encoded vehicle exterior photo")
 
+    @field_validator("selfie_base64", "license_image_base64", "vehicle_photo_base64")
+    @classmethod
+    def validate_image_payload_size(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Image payload cannot be empty.")
+        if len(v) > 28_000_000:
+            raise ValueError("Base64 image payload exceeds maximum allowed size (20MB limit).")
+        return v
+
 
 class VerificationRequest(BaseModel):
     request_id: str = Field(..., description="Unique request tracing ID")
@@ -101,6 +111,15 @@ class VerificationRequest(BaseModel):
     license_details: LicenseDetails
     vehicle_details: VehicleDetails
     images: VerificationImages
+
+    @field_validator("request_id", "driver_id")
+    @classmethod
+    def validate_identifier_format(cls, v: str) -> str:
+        if not v or not re.match(r"^[A-Za-z0-9_-]+$", v):
+            raise ValueError("Identifier must contain only alphanumeric characters, underscores, and hyphens.")
+        if len(v) > 64:
+            raise ValueError("Identifier must not exceed 64 characters.")
+        return v
 
 
 # Stage 1 Schema
@@ -130,6 +149,10 @@ class LicenseOcrResult(BaseModel):
     raw_ocr_lines: List[str] = Field(default_factory=list, description="Raw detected text lines")
     missing_fields: List[str] = Field(default_factory=list, description="Fields entered by user but not found in DL image")
     confidence_proof: Dict[str, Any] = Field(default_factory=dict, description="Granular mathematical proof & metrics justification")
+    jurisdiction: Optional[str] = Field(None, description="Canonical 2-letter Canadian jurisdiction code")
+    card_version: Optional[str] = Field(None, description="Detected or inferred card template version")
+    number_rules_pass: Optional[bool] = Field(None, description="Whether provincial embedded number grammar checks passed")
+    rule_discrepancies: List[str] = Field(default_factory=list, description="List of provincial grammar rule failures")
 
 
 # Stage 2 Schema
