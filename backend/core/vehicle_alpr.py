@@ -21,7 +21,9 @@ CONFUSION_MAP = {
     "G": "6",
     "T": "7",
     "B": "8",
+    "Y": "V",
 }
+
 
 
 def normalize_plate_string(plate: str, apply_confusion: bool = False) -> str:
@@ -223,6 +225,21 @@ def group_horizontal_tokens(ocr_lines: List[Any], source_img: Optional[np.ndarra
                     results.append(("-".join(slice_words), crop))
                     results.append((" ".join(slice_words), crop))
 
+        # 3. Non-slogan tokens combination (skips embedded provincial headers/slogans)
+        non_slogan_items = [x for x in line if not is_slogan_noise(x["text"])]
+        if 2 <= len(non_slogan_items) < n:
+            ns_words = [x["text"] for x in non_slogan_items]
+            ns_boxes = [x["box"] for x in non_slogan_items]
+            crop = None
+            if source_img is not None:
+                all_pts = np.vstack([np.array(b, dtype=np.int32) for b in ns_boxes])
+                bx, by, bw, bh = cv2.boundingRect(all_pts)
+                pad = 6
+                crop = source_img[max(0, by - pad):min(ih, by + bh + pad), max(0, bx - pad):min(iw, bx + bw + pad)]
+            results.append(("".join(ns_words), crop))
+            results.append(("-".join(ns_words), crop))
+            results.append((" ".join(ns_words), crop))
+
     return results
 
 
@@ -255,10 +272,12 @@ class VehicleALPREngine:
         # Thresholding
         _, thresh = cv2.threshold(abs_grad_x, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-        # Multi-scale morphological closing kernels (standard 17x3 and wider 27x5 to bridge hyphen/emblem gaps)
+        # Multi-scale morphological closing kernels (standard 17x3, 27x5, 35x5, and 45x7 to bridge wide hyphen/emblem gaps)
         kernels = [
             cv2.getStructuringElement(cv2.MORPH_RECT, (17, 3)),
             cv2.getStructuringElement(cv2.MORPH_RECT, (27, 5)),
+            cv2.getStructuringElement(cv2.MORPH_RECT, (35, 5)),
+            cv2.getStructuringElement(cv2.MORPH_RECT, (45, 7)),
         ]
 
         raw_boxes: List[Tuple[int, int, int, int]] = []
@@ -481,18 +500,45 @@ class VehicleALPREngine:
             if len(candidates) > 2:
                 plate_box_detected = True
 
-            for crop, bbox in candidates[:4]:
+            for crop, bbox in candidates[:6]:
                 if crop.size == 0:
                     continue
-                enhanced = apply_clahe(crop)
+
+                # 3a. Direct candidate crop
                 try:
-                    c_res, _ = ocr(enhanced)
+                    c_res, _ = ocr(crop)
                     if c_res:
                         process_ocr_results(c_res, crop)
                         if best_matched:
                             break
                 except Exception as e:
                     logger.debug(f"Candidate crop RapidOCR error: {e}")
+
+                # 3b. CLAHE enhanced crop
+                if best_score < settings.plate_match_threshold:
+                    enhanced = apply_clahe(crop)
+                    try:
+                        c_res, _ = ocr(enhanced)
+                        if c_res:
+                            process_ocr_results(c_res, crop)
+                            if best_matched:
+                                break
+                    except Exception as e:
+                        logger.debug(f"Candidate crop CLAHE RapidOCR error: {e}")
+
+                # 3c. 2x upscaled crop for small or distant plates
+                ch, cw = crop.shape[:2]
+                if best_score < settings.plate_match_threshold and (ch < 150 or cw < 300):
+                    try:
+                        upscaled = cv2.resize(crop, (cw * 2, ch * 2), interpolation=cv2.INTER_CUBIC)
+                        upscaled_enh = apply_clahe(upscaled)
+                        c_res, _ = ocr(upscaled_enh)
+                        if c_res:
+                            process_ocr_results(c_res, crop)
+                            if best_matched:
+                                break
+                    except Exception as e:
+                        logger.debug(f"Candidate crop upscaled RapidOCR error: {e}")
 
         # If candidates were found and best_crop not set, default to first candidate crop
         if best_crop is None:

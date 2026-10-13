@@ -2,6 +2,11 @@ import os
 import sys
 import time
 
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 # Thread clamping to prevent 98% CPU spike
 os.environ["OMP_NUM_THREADS"] = "2"
 os.environ["OPENBLAS_NUM_THREADS"] = "2"

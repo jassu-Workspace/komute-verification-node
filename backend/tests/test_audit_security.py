@@ -68,10 +68,10 @@ def test_decode_base64_max_size_enforcement():
 async def test_rate_limiter_x_forwarded_for():
     """Verify rate limiter extracts true client IP behind reverse proxy."""
     class DummyClient:
-        host = "10.0.0.1"
+        host = "127.0.0.1"
 
     class DummyRequest:
-        headers = {"x-forwarded-for": "203.0.113.45, 10.0.0.1"}
+        headers = {"x-forwarded-for": "203.0.113.45, 127.0.0.1"}
         client = DummyClient()
 
     # Clear records for this test IP

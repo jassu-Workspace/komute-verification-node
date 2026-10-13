@@ -147,6 +147,46 @@ def test_manitoba_fbf_951_full_extraction():
     assert plate in ("FBF 951", "FBF951")
 
 
+def test_ontario_cmby_815_full_extraction():
+    """
+    Verifies that Ontario license plate 'CMBY-815' (from Test Cases.docx)
+    is properly recognized with high match score.
+    """
+    test_img_path = _find_specimen("1.webp")
+    if not test_img_path or not os.path.exists(test_img_path):
+        pytest.skip("Test specimen 1.webp not found")
+
+    img = cv2.imread(test_img_path)
+    assert img is not None
+
+    target = "CMBY-815"
+    plate, matched, score, box_det, crop, raw_texts = vehicle_alpr_engine.extract_plate_number(img, target)
+
+    assert matched is True
+    assert score >= 0.90
+    assert plate in ("CMBY-815", "CMBY815")
+
+
+def test_bc_627_bej_full_extraction():
+    """
+    Verifies that British Columbia license plate '627-BEJ' (from Test Cases.docx)
+    is extracted and verified with full confidence.
+    """
+    test_img_path = _find_specimen("2.webp")
+    if not test_img_path or not os.path.exists(test_img_path):
+        pytest.skip("Test specimen 2.webp not found")
+
+    img = cv2.imread(test_img_path)
+    assert img is not None
+
+    target = "627-BEJ"
+    plate, matched, score, box_det, crop, raw_texts = vehicle_alpr_engine.extract_plate_number(img, target)
+
+    assert matched is True
+    assert score >= 0.90
+    assert plate in ("627-BEJ", "627BEJ")
+
+
 if __name__ == "__main__":
     print("Running test_alberta_ckz_3449_full_extraction...")
     test_alberta_ckz_3449_full_extraction()
@@ -154,6 +194,14 @@ if __name__ == "__main__":
 
     print("Running test_manitoba_fbf_951_full_extraction...")
     test_manitoba_fbf_951_full_extraction()
+    print("  [PASS]")
+
+    print("Running test_ontario_cmby_815_full_extraction...")
+    test_ontario_cmby_815_full_extraction()
+    print("  [PASS]")
+
+    print("Running test_bc_627_bej_full_extraction...")
+    test_bc_627_bej_full_extraction()
     print("  [PASS]")
 
     print("Running test_horizontal_token_grouping_split_plate...")
@@ -168,6 +216,6 @@ if __name__ == "__main__":
     test_plate_match_score_ambiguity_and_spacing()
     print("  [PASS]")
 
-    print("\nALL 5 TEST CASES PASSED SUCCESSFULLY!")
+    print("\nALL 7 TEST CASES PASSED SUCCESSFULLY!")
 
 

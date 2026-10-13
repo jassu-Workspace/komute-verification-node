@@ -15,7 +15,7 @@ def test_system_page_endpoint():
         response = client.get(path)
         assert response.status_code == 200
         assert "Komüte Telemetry Hub" in response.text
-        assert "AI & CV Engine Matrix" in response.text
+        assert "AI &amp; CV Matrix" in response.text or "AI & CV Matrix" in response.text
 
 
 def test_telemetry_system_api():

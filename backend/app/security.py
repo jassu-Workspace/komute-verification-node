@@ -108,7 +108,7 @@ def generate_artifact_token(file_path: str, expires_in_seconds: int = 3600) -> s
 
 def verify_artifact_token(file_path: str, token: Optional[str]) -> bool:
     """Verify time-limited HMAC-SHA256 signature token."""
-    if not token or "." not in token:
+    if not token or not isinstance(token, str) or "." not in token:
         return False
     try:
         sig, expires_at_str = token.split(".", 1)

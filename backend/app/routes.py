@@ -520,8 +520,17 @@ async def get_storage_file(
     from pathlib import Path
     from fastapi.responses import FileResponse
 
+    base_dir = settings.uploads_root
+    target_file = (base_dir / file_path).resolve()
+
+    # Prevent directory traversal
+    try:
+        target_file.relative_to(base_dir)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Access denied: invalid file path.")
+
     # Token-based download verification
-    if token:
+    if token is not None and isinstance(token, str):
         if not verify_artifact_token(file_path, token):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -534,15 +543,6 @@ async def get_storage_file(
     if len(parts) >= 2 and parts[0] == "drivers":
         target_driver = parts[1]
         verify_driver_ownership(target_driver, x_driver_id)
-
-    base_dir = settings.uploads_root
-    target_file = (base_dir / file_path).resolve()
-
-    # Prevent directory traversal
-    try:
-        target_file.relative_to(base_dir)
-    except ValueError:
-        raise HTTPException(status_code=403, detail="Access denied: invalid file path.")
 
     if not target_file.exists() or not target_file.is_file():
         raise HTTPException(status_code=404, detail="Requested artifact image not found.")
