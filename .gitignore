@@ -55,3 +55,6 @@ backend/test_images/QC/
 backend/test_images/SK/
 backend/test_images/YT/
 backend/test_images/ground_truth_all.json
+
+# Scratch and extracted test artifacts
+test_cases_extracted/

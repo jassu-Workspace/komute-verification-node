@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 import cv2
 import numpy as np
 from rapidfuzz import distance, fuzz
@@ -99,6 +99,133 @@ def calculate_plate_match_score(extracted_plate: str, target_plate: str) -> Tupl
     return matched, round(float(best_score), 3)
 
 
+# Known provincial slogans and headers on Canadian / North American plates
+PROVINCIAL_SLOGANS = {
+    "ALBERTA", "WILD ROSE COUNTRY", "WILD ROSE",
+    "ONTARIO", "YOURS TO DISCOVER", "A PLACE TO GROW",
+    "BRITISH COLUMBIA", "BEAUTIFUL BRITISH COLUMBIA", "BEST PLACE ON EARTH",
+    "MANITOBA", "FRIENDLY MANITOBA", "100 000 LAKES", "100000 LAKES",
+    "QUEBEC", "JE ME SOUVIENS",
+    "SASKATCHEWAN", "LAND OF LIVING SKIES",
+    "NOVA SCOTIA", "CANADA'S OCEAN PLAYGROUND", "CANADAS OCEAN PLAYGROUND",
+    "NEW BRUNSWICK", "NOUVEAU BRUNSWICK",
+    "PRINCE EDWARD ISLAND", "PEI", "BIRTHPLACE OF CONFEDERATION",
+    "NEWFOUNDLAND", "LABRADOR",
+    "YUKON", "THE KLONDIKE",
+    "NORTHWEST TERRITORIES", "SPECTACULAR",
+    "NUNAVUT", "CANADA", "COMMERCIAL", "DEALER", "TRAILER",
+}
+
+
+def is_slogan_noise(text: str) -> bool:
+    """Check if detected text is a pure provincial header or slogan without digits."""
+    clean = re.sub(r"[^A-Z0-9]", "", text.upper())
+    if not clean or any(ch.isdigit() for ch in clean):
+        return False
+    for s in PROVINCIAL_SLOGANS:
+        s_clean = re.sub(r"[^A-Z0-9]", "", s)
+        if clean == s_clean or s_clean in clean:
+            return True
+    return False
+
+
+def group_horizontal_tokens(ocr_lines: List[Any], source_img: Optional[np.ndarray] = None) -> List[Tuple[str, Optional[np.ndarray]]]:
+    """
+    Given OCR lines [(box, text, conf), ...], groups tokens sharing approximately
+    the same horizontal baseline and reconstructs multi-word / hyphen-separated plate numbers.
+    Also produces cropped plate patches for the combined tokens.
+    """
+    if not ocr_lines:
+        return []
+
+    items = []
+    for item in ocr_lines:
+        if len(item) < 2:
+            continue
+        box = item[0]
+        text = str(item[1]).strip()
+        conf = float(item[2]) if len(item) >= 3 else 1.0
+        if not text:
+            continue
+        pts = box
+        y_coords = [p[1] for p in pts]
+        x_coords = [p[0] for p in pts]
+        y_min, y_max = min(y_coords), max(y_coords)
+        x_min, x_max = min(x_coords), max(x_coords)
+        y_center = (y_min + y_max) / 2.0
+        h = max(1.0, y_max - y_min)
+        items.append({
+            "text": text,
+            "conf": conf,
+            "y_center": y_center,
+            "y_min": y_min,
+            "y_max": y_max,
+            "x_min": x_min,
+            "x_max": x_max,
+            "h": h,
+            "box": box,
+        })
+
+    sorted_items = sorted(enumerate(items), key=lambda x: (x[1]["y_center"], x[1]["x_min"]))
+    lines: List[List[Dict[str, Any]]] = []
+    used = set()
+
+    for i, item in sorted_items:
+        if i in used:
+            continue
+        cur_line = [item]
+        used.add(i)
+        for j, other in sorted_items:
+            if j in used:
+                continue
+            h_ref = (item["h"] + other["h"]) / 2.0
+            y_diff = abs(item["y_center"] - other["y_center"])
+            y_overlap = max(0.0, min(item["y_max"], other["y_max"]) - max(item["y_min"], other["y_min"]))
+            if y_diff <= 0.60 * h_ref or (y_overlap / h_ref) >= 0.40:
+                cur_line.append(other)
+                used.add(j)
+
+        cur_line.sort(key=lambda x: x["x_min"])
+        lines.append(cur_line)
+
+    results: List[Tuple[str, Optional[np.ndarray]]] = []
+    ih, iw = (source_img.shape[:2]) if source_img is not None else (0, 0)
+
+    for line in lines:
+        words = [x["text"] for x in line]
+        boxes = [x["box"] for x in line]
+
+        # 1. Individual word tokens
+        for idx, w in enumerate(words):
+            crop = None
+            if source_img is not None:
+                b = boxes[idx]
+                pts = np.array(b, dtype=np.int32)
+                bx, by, bw, bh = cv2.boundingRect(pts)
+                pad = 4
+                crop = source_img[max(0, by - pad):min(ih, by + bh + pad), max(0, bx - pad):min(iw, bx + bw + pad)]
+            results.append((w, crop))
+
+        # 2. Adjacent horizontal n-grams (e.g. ['CKZ', '3449'] -> 'CKZ-3449', 'CKZ 3449', 'CKZ3449')
+        n = len(words)
+        if n >= 2:
+            for k in range(2, n + 1):
+                for start_idx in range(n - k + 1):
+                    slice_words = words[start_idx:start_idx + k]
+                    slice_boxes = boxes[start_idx:start_idx + k]
+                    crop = None
+                    if source_img is not None:
+                        all_pts = np.vstack([np.array(b, dtype=np.int32) for b in slice_boxes])
+                        bx, by, bw, bh = cv2.boundingRect(all_pts)
+                        pad = 6
+                        crop = source_img[max(0, by - pad):min(ih, by + bh + pad), max(0, bx - pad):min(iw, bx + bw + pad)]
+                    results.append(("".join(slice_words), crop))
+                    results.append(("-".join(slice_words), crop))
+                    results.append((" ".join(slice_words), crop))
+
+    return results
+
+
 class VehicleALPREngine:
     """
     Stage 3: Vehicle ALPR & Visual Verification Engine.
@@ -111,8 +238,9 @@ class VehicleALPREngine:
 
     def detect_plate_candidate_regions(self, img_bgr: np.ndarray) -> List[Tuple[np.ndarray, Tuple[int, int, int, int]]]:
         """
-        Isolate candidate number plate bounding boxes using Canny edge detection
-        and morphological rectangle filters.
+        Isolate candidate number plate bounding boxes using edge detection
+        and multi-scale morphological filters. Supports both full vehicle photos
+        and close-up license plate uploads.
         """
         h, w = img_bgr.shape[:2]
         gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
@@ -127,41 +255,83 @@ class VehicleALPREngine:
         # Thresholding
         _, thresh = cv2.threshold(abs_grad_x, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-        # Morphological closing with rectangular structuring element
-        rect_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (17, 3))
-        closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, rect_kernel)
+        # Multi-scale morphological closing kernels (standard 17x3 and wider 27x5 to bridge hyphen/emblem gaps)
+        kernels = [
+            cv2.getStructuringElement(cv2.MORPH_RECT, (17, 3)),
+            cv2.getStructuringElement(cv2.MORPH_RECT, (27, 5)),
+        ]
 
-        contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        raw_boxes: List[Tuple[int, int, int, int]] = []
+        img_area = w * h
+
+        for rect_kernel in kernels:
+            closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, rect_kernel)
+            contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            for c in contours:
+                x, y, cw, ch = cv2.boundingRect(c)
+                if ch == 0 or cw == 0:
+                    continue
+
+                aspect_ratio = cw / float(ch)
+                area = cw * ch
+
+                # License plates typically have aspect ratio between 1.2 and 7.0
+                # Expanded area ceiling to 0.95 to accommodate close-up / cropped plate photos
+                if 1.2 <= aspect_ratio <= 7.0 and (img_area * 0.002 <= area <= img_area * 0.95):
+                    raw_boxes.append((x, y, cw, ch))
+
+        # Sort candidate boxes by area descending and score proximity to standard plate aspect ratio (~2.0 - 4.5)
+        def box_rank(b):
+            _, _, cw, ch = b
+            ar = cw / float(ch)
+            ar_diff = abs(ar - 2.5)
+            return (cw * ch) / (1.0 + ar_diff)
+
+        raw_boxes.sort(key=box_rank, reverse=True)
+
+        # Non-maximum suppression / overlap deduplication
+        deduped_boxes: List[Tuple[int, int, int, int]] = []
+        for b in raw_boxes:
+            x, y, cw, ch = b
+            overlap = False
+            for dx, dy, dcw, dch in deduped_boxes:
+                # Check intersection over union
+                ix = max(x, dx)
+                iy = max(y, dy)
+                iw_box = min(x + cw, dx + dcw) - ix
+                ih_box = min(y + ch, dy + dch) - iy
+                if iw_box > 0 and ih_box > 0:
+                    inter_area = iw_box * ih_box
+                    union_area = (cw * ch) + (dcw * dch) - inter_area
+                    if (inter_area / union_area) > 0.45:
+                        overlap = True
+                        break
+            if not overlap:
+                deduped_boxes.append(b)
 
         candidates: List[Tuple[np.ndarray, Tuple[int, int, int, int]]] = []
+        for x, y, cw, ch in deduped_boxes[:6]:
+            pad_x = int(cw * 0.06)
+            pad_y = int(ch * 0.06)
+            x1 = max(0, x - pad_x)
+            y1 = max(0, y - pad_y)
+            x2 = min(w, x + cw + pad_x)
+            y2 = min(h, y + ch + pad_y)
 
-        for c in contours:
-            x, y, cw, ch = cv2.boundingRect(c)
-            if ch == 0 or cw == 0:
-                continue
+            cropped_plate = img_bgr[y1:y2, x1:x2]
+            candidates.append((cropped_plate, (x1, y1, x2 - x1, y2 - y1)))
 
-            aspect_ratio = cw / float(ch)
-            area = cw * ch
-            img_area = w * h
+        # Fallback 1: Center 80% crop (captures centered plates on close-up or tight vehicle photos)
+        c_y1, c_y2 = int(h * 0.10), int(h * 0.90)
+        c_x1, c_x2 = int(w * 0.05), int(w * 0.95)
+        candidates.append((img_bgr[c_y1:c_y2, c_x1:c_x2], (c_x1, c_y1, c_x2 - c_x1, c_y2 - c_y1)))
 
-            # Typical license plates have aspect ratio between 1.8 and 6.0
-            if 1.8 <= aspect_ratio <= 6.5 and (img_area * 0.002 <= area <= img_area * 0.35):
-                pad_x = int(cw * 0.05)
-                pad_y = int(ch * 0.05)
-                x1 = max(0, x - pad_x)
-                y1 = max(0, y - pad_y)
-                x2 = min(w, x + cw + pad_x)
-                y2 = min(h, y + ch + pad_y)
-
-                cropped_plate = img_bgr[y1:y2, x1:x2]
-                candidates.append((cropped_plate, (x1, y1, x2 - x1, y2 - y1)))
-
-        # Also fallback: bottom-center third of image often contains the plate
-        bottom_third_y = int(h * 0.45)
-        bottom_center_x1 = int(w * 0.15)
-        bottom_center_x2 = int(w * 0.85)
-        center_crop = img_bgr[bottom_third_y:h, bottom_center_x1:bottom_center_x2]
-        candidates.append((center_crop, (bottom_center_x1, bottom_third_y, bottom_center_x2 - bottom_center_x1, h - bottom_third_y)))
+        # Fallback 2: Lower-center crop (for full vehicle photos where plate is on the front/rear bumper)
+        bottom_y1 = int(h * 0.35)
+        bottom_x1 = int(w * 0.10)
+        bottom_x2 = int(w * 0.90)
+        candidates.append((img_bgr[bottom_y1:h, bottom_x1:bottom_x2], (bottom_x1, bottom_y1, bottom_x2 - bottom_x1, h - bottom_y1)))
 
         return candidates
 
@@ -169,14 +339,19 @@ class VehicleALPREngine:
         self,
         vehicle_img: np.ndarray,
         target_plate: str,
-    ) -> Tuple[Optional[str], bool, float, bool, Optional[np.ndarray]]:
+    ) -> Tuple[Optional[str], bool, float, bool, Optional[np.ndarray], List[str]]:
         """
-        Run OCR on detected plate regions and focused vehicle regions to extract plate number.
+        Run OCR on full vehicle image and detected plate candidate regions to extract plate number.
+        Employs multi-pass extraction:
+          1. Direct full-image OCR + spatial horizontal token reconstruction
+          2. CLAHE contrast-enhanced full-image OCR
+          3. Multi-scale candidate contour crops
+          4. Balanced bumper & central crops
         Pre-scales images to max 960px to prevent memory spikes.
-        Returns (extracted_plate, plate_matched, similarity, plate_box_detected, plate_crop_bgr).
+        Returns (extracted_plate, plate_matched, similarity, plate_box_detected, plate_crop_bgr, unique_raw_texts).
         """
         if vehicle_img is None or vehicle_img.size == 0:
-            return None, False, 0.0, False, None
+            return None, False, 0.0, False, None, []
 
         import gc
         from core.image_utils import resize_image_max_dimension
@@ -184,7 +359,6 @@ class VehicleALPREngine:
         # Downscale full vehicle photo to max 960px to keep peak RAM minimal
         scaled_vehicle, _ = resize_image_max_dimension(vehicle_img, max_dim=960)
 
-        candidates = self.detect_plate_candidate_regions(scaled_vehicle)
         from core.ocr_engine import shared_ocr
         ocr = shared_ocr.get_engine()
 
@@ -193,33 +367,51 @@ class VehicleALPREngine:
         best_score = 0.0
         best_matched = False
         best_crop: Optional[np.ndarray] = None
-        plate_box_detected = len(candidates) > 1
+        plate_box_detected = False
 
         all_detected_texts: List[str] = []
 
         def evaluate_candidate(cand_text: str, crop_img: Optional[np.ndarray]):
             nonlocal best_score, best_plate, best_matched, best_crop
+            if not cand_text:
+                return
+
             text_clean = normalize_plate_string(cand_text)
             if len(text_clean) < 3:
                 return
 
+            # Suppress pure provincial slogans (e.g. 'WILDROSECOUNTRY') from winning over real plates
+            if is_slogan_noise(cand_text):
+                return
+
             matched, score = calculate_plate_match_score(text_clean, target_plate)
-            # If target plate is completely contained within candidate string (e.g. DL7CQ1939 inside DL7CQ1939AND), isolate clean target plate
-            effective_plate = clean_target if clean_target in text_clean else text_clean
+
+            # Determine best representation of the plate
+            if text_clean == clean_target:
+                # Clean match matches target plate; preserve target's formatted string (e.g. 'CKZ-3449')
+                effective_plate = target_plate.strip().upper()
+            elif clean_target in text_clean:
+                effective_plate = target_plate.strip().upper()
+            elif cand_text.strip().replace(" ", "-").upper() == target_plate.strip().upper():
+                effective_plate = target_plate.strip().upper()
+            else:
+                effective_plate = cand_text.strip().upper() if len(cand_text.strip()) <= 12 else text_clean
 
             is_better = False
             if score > best_score:
                 is_better = True
             elif score == best_score and best_score > 0.0:
+                clean_eff = normalize_plate_string(effective_plate)
+                clean_cur = normalize_plate_string(best_plate or "")
                 # 1. Exact match to clean_target always beats non-exact match
-                if effective_plate == clean_target and best_plate != clean_target:
+                if clean_eff == clean_target and clean_cur != clean_target:
                     is_better = True
-                elif best_plate == clean_target and effective_plate != clean_target:
+                elif clean_cur == clean_target and clean_eff != clean_target:
                     is_better = False
                 else:
                     # 2. Closer length to target plate wins (eliminates noise words like 'AND')
-                    new_diff = abs(len(effective_plate) - len(clean_target))
-                    cur_diff = abs(len(best_plate or "") - len(clean_target))
+                    new_diff = abs(len(clean_eff) - len(clean_target))
+                    cur_diff = abs(len(clean_cur) - len(clean_target))
                     if new_diff < cur_diff:
                         is_better = True
 
@@ -227,69 +419,93 @@ class VehicleALPREngine:
                 best_score = score
                 best_plate = effective_plate
                 best_matched = matched
-                if crop_img is not None:
+                if crop_img is not None and crop_img.size > 0:
                     best_crop = crop_img
 
-        # 1. OCR on top candidate plate crops (at most top 4 candidates)
-        for crop, bbox in candidates[:4]:
-            if crop.size == 0:
-                continue
-            enhanced = apply_clahe(crop)
-            try:
-                res, _ = ocr(enhanced)
-                if res:
-                    lines_text = []
-                    for line in res:
-                        if len(line) >= 2:
-                            text = str(line[1]).strip()
-                            if not text:
-                                continue
-                            lines_text.append(text)
-                            all_detected_texts.append(text)
-                            evaluate_candidate(text, crop)
+        def process_ocr_results(res: List[Any], src_img: Optional[np.ndarray]):
+            if not res:
+                return
+            lines_text = []
+            for line in res:
+                if len(line) >= 2:
+                    t = str(line[1]).strip()
+                    if t:
+                        lines_text.append(t)
+                        all_detected_texts.append(t)
 
-                    # Evaluate concatenated text to handle split/stacked plates
-                    full_crop_text = " ".join(lines_text)
-                    all_detected_texts.append(full_crop_text)
-                    evaluate_candidate(full_crop_text, crop)
+            # Evaluate horizontally grouped tokens (single words + adjacent n-grams)
+            grouped_candidates = group_horizontal_tokens(res, src_img)
+            for cand_txt, cand_crop in grouped_candidates:
+                all_detected_texts.append(cand_txt)
+                evaluate_candidate(cand_txt, cand_crop)
 
-            except Exception as e:
-                logger.debug(f"Candidate crop RapidOCR error: {e}")
+            # Also evaluate concatenated text of non-slogan lines
+            non_slogan_lines = [l for l in lines_text if not is_slogan_noise(l)]
+            if non_slogan_lines:
+                concat_text = " ".join(non_slogan_lines)
+                all_detected_texts.append(concat_text)
+                evaluate_candidate(concat_text, src_img)
 
-        # 2. OCR on focused lower half if candidates didn't yield match
+        # =========================================================================
+        # PASS 1: Direct Full-Image OCR Pass
+        # If user uploaded a close-up plate photo or cropped vehicle, the plate is visible immediately.
+        # =========================================================================
+        try:
+            full_res, _ = ocr(scaled_vehicle)
+            if full_res:
+                process_ocr_results(full_res, scaled_vehicle)
+                if best_score >= 0.70:
+                    plate_box_detected = True
+        except Exception as e:
+            logger.debug(f"Pass 1 full-image RapidOCR error: {e}")
+
+        # =========================================================================
+        # PASS 2: Contrast-Enhanced Full-Image Pass (CLAHE)
+        # =========================================================================
         if best_score < settings.plate_match_threshold:
             try:
-                vh, vw = scaled_vehicle.shape[:2]
-                lower_half = scaled_vehicle[int(vh * 0.35) :, :]
-                res, _ = ocr(lower_half)
-                if res:
-                    lines_text = []
-                    for line in res:
-                        if len(line) >= 2:
-                            text = str(line[1]).strip()
-                            if not text:
-                                continue
-                            lines_text.append(text)
-                            all_detected_texts.append(text)
-                            evaluate_candidate(text, None)
-
-                    full_lower_text = " ".join(lines_text)
-                    all_detected_texts.append(full_lower_text)
-                    evaluate_candidate(full_lower_text, None)
+                enhanced_full = apply_clahe(scaled_vehicle)
+                full_clahe_res, _ = ocr(enhanced_full)
+                if full_clahe_res:
+                    process_ocr_results(full_clahe_res, scaled_vehicle)
+                    if best_score >= 0.70:
+                        plate_box_detected = True
             except Exception as e:
-                logger.debug(f"Focused lower vehicle RapidOCR error: {e}")
+                logger.debug(f"Pass 2 full-image CLAHE RapidOCR error: {e}")
 
-        gc.collect()
+        # =========================================================================
+        # PASS 3: Candidate Contour Bounding Boxes (for full-vehicle photos)
+        # =========================================================================
+        if best_score < settings.plate_match_threshold:
+            candidates = self.detect_plate_candidate_regions(scaled_vehicle)
+            if len(candidates) > 2:
+                plate_box_detected = True
 
-        # If candidates exist but best_crop not selected, take first candidate
-        if best_crop is None and candidates:
-            best_crop = candidates[0][0]
+            for crop, bbox in candidates[:4]:
+                if crop.size == 0:
+                    continue
+                enhanced = apply_clahe(crop)
+                try:
+                    c_res, _ = ocr(enhanced)
+                    if c_res:
+                        process_ocr_results(c_res, crop)
+                        if best_matched:
+                            break
+                except Exception as e:
+                    logger.debug(f"Candidate crop RapidOCR error: {e}")
+
+        # If candidates were found and best_crop not set, default to first candidate crop
+        if best_crop is None:
+            cands = self.detect_plate_candidate_regions(scaled_vehicle)
+            if cands:
+                best_crop = cands[0][0]
 
         # De-duplicate raw texts for UI cleanliness
-        unique_raw_texts = []
+        unique_raw_texts: List[str] = []
         for t in all_detected_texts:
-            if t not in unique_raw_texts and t.strip() != "":
-                unique_raw_texts.append(t)
+            t_str = str(t).strip()
+            if t_str and t_str not in unique_raw_texts:
+                unique_raw_texts.append(t_str)
 
         gc.collect()
 
