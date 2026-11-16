@@ -69,11 +69,16 @@ def iter_variants(gray: np.ndarray) -> Iterator[np.ndarray]:
 
 
 def decode_pdf417(img_bgr: np.ndarray, budget_s: float = DEFAULT_BUDGET_S) -> Optional[str]:
-    """Return the first PDF417 payload as latin-1 text, or None. Gives up after `budget_s` seconds."""
+    """Return the first AAMVA-looking PDF417 payload as latin-1 text, else the first other PDF417 payload, else None.
+
+    A distorted photo can yield a garbage PDF417 read on one variant (seen on rotated cards), so a non-AAMVA
+    read does not stop the search. Gives up after `budget_s` seconds.
+    """
     if img_bgr is None or img_bgr.size == 0:
         return None
     gray = img_bgr if img_bgr.ndim == 2 else cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     deadline = time.monotonic() + budget_s
+    fallback: Optional[str] = None
     for variant in iter_variants(gray):
         for binarizer in (zxingcpp.Binarizer.LocalAverage, zxingcpp.Binarizer.GlobalHistogram):
             found = zxingcpp.read_barcodes(
@@ -85,11 +90,14 @@ def decode_pdf417(img_bgr: np.ndarray, budget_s: float = DEFAULT_BUDGET_S) -> Op
                 text_mode=zxingcpp.TextMode.Plain,
                 binarizer=binarizer,
             )
-            if found:
-                return found[0].bytes.decode("latin-1")
+            for hit in found:
+                text = hit.bytes.decode("latin-1")
+                if text.startswith("@"):
+                    return text
+                fallback = fallback or text
         if time.monotonic() > deadline:
-            return None
-    return None
+            return fallback
+    return fallback
 
 
 def run_barcode_stage(

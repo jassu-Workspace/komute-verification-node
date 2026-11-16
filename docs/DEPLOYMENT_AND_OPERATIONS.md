@@ -19,7 +19,7 @@ Keep `--workers 1`: one verification at a time per container, and the models loa
 | `STORAGE_KEY_B64`, `STORAGE_KEY_ID` | 32-byte base64 data key and its id, from the host's key service |
 | `MANIFEST_KEY_B64`, `MANIFEST_KEY_ID` | 32-byte base64 signing key and its id |
 | `LIVENESS_MODEL` | path to the liveness ONNX file; add its SHA-256 to `backend/models/models.lock` |
-| `FACE_MATCH_THRESHOLD` (0.40), `LIVENESS_THRESHOLD` (0.5), `PLATE_MIN_CONFIDENCE` (0.6) | decision thresholds. The first two are provisional |
+| `FACE_MATCH_THRESHOLD` (0.35), `LIVENESS_THRESHOLD` (0.5), `PLATE_MIN_CONFIDENCE` (0.6) | decision thresholds. The first two are provisional |
 | `MAX_UPLOAD_BYTES` (10 MB), `MAX_IMAGE_SIDE` (2048), `COMPRESSED_MAX_SIDE` (1280) | size limits |
 | `REJECTED_IMAGES_TTL_H` (72), `APPROVED_ORIGINALS_TTL_D` (30), `SWEEP_INTERVAL_S` (3600) | retention |
 | `RETRY_AFTER_S` (5) | value of `Retry-After` on `503` |

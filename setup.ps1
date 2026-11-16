@@ -17,10 +17,10 @@
   Safe to run again: every step skips what is already correct. Start the app afterwards with .\run.ps1.
 
 .EXAMPLE
-  .\install.ps1
-  .\install.ps1 -SkipTests
-  .\install.ps1 -Force        # re-download every model and reinstall every package
-  powershell -ExecutionPolicy Bypass -File .\install.ps1    # if script execution is blocked
+  .\setup.ps1
+  .\setup.ps1 -SkipTests
+  .\setup.ps1 -Force        # re-download every model and reinstall every package
+  powershell -ExecutionPolicy Bypass -File .\setup.ps1    # if script execution is blocked
 #>
 param(
     [switch]$SkipTests,
@@ -90,7 +90,7 @@ function Test-VcRedist {
 
 # ---------------------------------------------------------------- 0. platform
 Step 'Checking the platform'
-if ($env:OS -ne 'Windows_NT') { Fail 'install.ps1 is for Windows. On Linux use the Dockerfile at handover.' }
+if ($env:OS -ne 'Windows_NT') { Fail 'setup.ps1 is for Windows. On Ubuntu use: sudo ./setup.sh' }
 if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64' -and $env:PROCESSOR_ARCHITEW6432 -ne 'AMD64') {
     Fail "An x64 (AMD64) machine is required; this one is $env:PROCESSOR_ARCHITECTURE. ONNX Runtime and OpenCV wheels are x64."
 }
@@ -283,4 +283,4 @@ if ($SkipTests) {
 }
 
 if (-not $env:KOMUTE_LIVENESS_MODEL) { Warn 'No liveness model: dev runs skip liveness. Production needs KOMUTE_LIVENESS_MODEL.' }
-Write-Host "`nInstall complete. Start the app with: .\run.ps1" -ForegroundColor Green
+Write-Host "`nSetup complete. Start the app with: .\run.ps1" -ForegroundColor Green

@@ -23,7 +23,7 @@ def make(**kw) -> Settings:
 
 def test_defaults_ok():
     s = make()
-    assert s.env == "dev" and s.face_match_threshold == 0.40
+    assert s.env == "dev" and s.face_match_threshold == 0.35
 
 
 def test_keys_must_decode_to_32_bytes():

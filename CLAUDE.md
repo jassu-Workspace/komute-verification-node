@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state (read first)
 
-Komüte-Local is a driver and vehicle verification module that a separate host application calls. **It is built:** engine (`backend/core`), REST wrapper (`backend/app`), encrypted storage (`storage/`), one-file test page (`backend/static/index.html`), evaluation and bench scripts (`scripts/`), and tests (`tests/`). Design: `docs/superpowers/specs/2026-11-11-komute-local-verification-design.md`. Build plan: `docs/superpowers/plans/2026-11-11-komute-local-master-plan.md`. Results and open items: `docs/ACCEPTANCE_REPORT.md`. Model facts: `docs/MODEL_FACTS.md`. The folder is a git repository on branch `feat/verification-engine` (no remote; never push).
+Komüte-Local is a driver and vehicle verification module that a separate host application calls. **It is built:** engine (`backend/core`), REST wrapper (`backend/app`), encrypted storage (`storage/`), one-file test page (`backend/static/index.html`), evaluation and bench scripts (`scripts/`), tests (`tests/`) and a Postman collection (`postman/`, see `postman/README.md`). Design: `docs/superpowers/specs/2026-11-11-komute-local-verification-design.md`. Build plan: `docs/superpowers/plans/2026-11-11-komute-local-master-plan.md`. Results and open items: `docs/ACCEPTANCE_REPORT.md`. Model facts: `docs/MODEL_FACTS.md`. The folder is a git repository on branch `feat/verification-engine` (no remote; never push).
 
 **Private data:** `Original Lisence's/` holds the owner's real licence photos. It is git-ignored. Never print, log, commit or paste anything read from them (names, numbers, dates, addresses, raw barcode text, face crops). Copies live in `$LOCALAPPDATA/komute/samples/raw/`.
 
@@ -23,7 +23,7 @@ Komüte-Local is a driver and vehicle verification module that a separate host a
 
 Python 3.12 only (installed by `uv`). The venv lives outside OneDrive. Run from the repo root in Git Bash.
 
-`.\install.ps1` sets up a fresh Windows machine end to end: uv, Python 3.12, venv, `requirements.lock`, the four models (downloaded from their public sources and rejected unless the SHA-256 matches `models.lock`), dev keys, then the tests (`-SkipTests`, `-Force`). One command does the checks and starts the app on Windows: `.\run.ps1` (`-CheckOnly`, `-Port`, `-NoBrowser`, `-WithApiKey`). It installs missing dependencies from `requirements.txt` with uv and verifies model files against `models.lock`. Manual steps:
+`.\setup.ps1` sets up a fresh Windows machine end to end: uv, Python 3.12, venv, `requirements.lock`, the four models (downloaded from their public sources and rejected unless the SHA-256 matches `models.lock`), dev keys, then the tests (`-SkipTests`, `-Force`). One command does the checks and starts the app on Windows: `.\run.ps1` (`-CheckOnly`, `-Port`, `-NoBrowser`, `-WithApiKey`). It installs missing dependencies from `requirements.txt` with uv and verifies model files against `models.lock`. Ubuntu 22.04/24.04 server: `sudo ./setup.sh` (user `komute`, code in `/opt/komute/app`, venv `/opt/komute/venv`, settings `/etc/komute/komute.env`, data `/var/lib/komute`, systemd service `komute` that runs `./start.sh`; `--no-start`). Guides: `docs/guides/*.pdf`, built by `docs/guides/build_guides.py`. Manual steps:
 
 ```bash
 uv python install 3.12
@@ -178,7 +178,7 @@ Compared on 2026-11-11 with a secondary copy of the US FMCSA chart (August 2021)
 ## Known gaps and open items
 
 - **Liveness:** no liveness model file exists. Dev runs skip it (advisory `LIVENESS_SKIPPED_DEV`). `OnnxLiveness` is untested on a real model and its parameters are unverified. Production start requires one.
-- **Face threshold:** 0.40 is provisional. Real data so far is 3 licences, 6 impostor pairs and no selfies. No false-accept or false-reject rate is measured.
+- **Face threshold:** 0.35 (owner, 2026-11-12; was 0.40). AgeDB-30: 0 of 3,000 false accepts (highest impostor 0.268), 14.6% false rejects on ~30-year gaps. 3,000 impostor pairs cannot prove the 0.01% target; confirm on real licence-selfie pairs. Fine-tuning on CACD was tried and made it worse (docs/calibration).
 - **Docker:** the owner decided (2026-11-11) NOT to use Docker until the module is handed to the main developers. Do not build, run or start Docker. Memory is measured locally with `scripts/bench.py` (Windows: steady about 334 MB, peak about 383 MB). The `Dockerfile` exists but has never been built or run; Linux memory is unmeasured until handover.
 - **Plate OCR and detector:** the OCR reads 9 of 9 internet photos of Canadian plates exactly (tuned on nothing; the photos are in `$LOCALAPPDATA/komute/samples/plates`, stock images, never commit them). Plates smaller than about 5% of the frame width were not detected in a quick test. No real onboarding vehicle photo has been tested.
 - **Docs:** `docs/superpowers/` holds the original spec and plan, which predate several decisions (see the ledger rulings). The other `docs/*.md` files describe the built system.

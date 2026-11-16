@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     liveness_model: Path | None = None
     dev_skip_liveness: bool = False
     response_barcode_fields: bool = False  # true adds every decoded barcode element (address too) to the response
-    face_match_threshold: float = Field(0.40, ge=0.2, le=0.95)
+    face_match_threshold: float = Field(0.35, ge=0.2, le=0.95)  # AgeDB-30: 0/3000 false accepts at 0.35
     face_detect_score: float = Field(0.7, gt=0, lt=1)
     liveness_threshold: float = Field(0.5, gt=0, lt=1)
     name_match_threshold: float = Field(90.0, ge=50, le=100)

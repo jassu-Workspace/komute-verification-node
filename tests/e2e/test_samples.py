@@ -8,6 +8,7 @@ Limits (see docs): the selfie is the licence-front photo of the same person (a s
 accuracy measure); the other persons' fronts serve as real impostors; the vehicle is a synthetic scene.
 """
 import base64
+import json
 import os
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
@@ -96,8 +97,17 @@ def run(env, name, card, case, fields=None, files=None, now=None, others=None):
                     headers={"X-API-Key": KEY})
     body = r.json()
     codes = [x["code"] for x in body.get("reasons", [])]
-    RESULTS.append({"case": case, "status": r.status_code, "decision": body.get("decision"), "codes": codes,
-                    "sim": body.get("stages", {}).get("face", {}).get("similarity")})
+    st = body.get("stages", {})
+    # Non-personal fields only: codes, flags, scores, timings. Never names, numbers, dates or barcode text.
+    RESULTS.append({"case": case, "person": name, "status": r.status_code, "decision": body.get("decision"),
+                    "codes": codes, "retryable": [x["retryable"] for x in body.get("reasons", [])],
+                    "sim": st.get("face", {}).get("similarity"),
+                    "barcode_readable": st.get("barcode", {}).get("readable"),
+                    "jurisdiction": st.get("barcode", {}).get("jurisdiction"),
+                    "face_ran": st.get("face", {}).get("ran"), "vehicle_ran": st.get("vehicle", {}).get("ran"),
+                    "plate_found": st.get("vehicle", {}).get("plate_found"),
+                    "plate_matched": st.get("vehicle", {}).get("plate_matched"),
+                    "advisories": body.get("advisories", []), "total_ms": body.get("timings_ms", {}).get("total")})
     if r.status_code == 200:
         report = verify_session(engine.store, session_prefix(name, f["request_id"]), b"m" * 32)
         assert report.ok, f"{name}/{case}: session does not verify"
@@ -220,4 +230,5 @@ def test_zz_write_private_summary(env):
              + (f"min {sims[0]:.3f}, max {sims[-1]:.3f}, mean {sum(sims) / len(sims):.3f}" if sims else "none"),
              f"- Same-photo similarity: {[round(s, 3) for s in selfs]}"]
     Path(os.environ["KOMUTE_SAMPLES_DIR"], "e2e_report.md").write_text("\n".join(lines), encoding="utf-8")
+    Path(os.environ["KOMUTE_SAMPLES_DIR"], "e2e_results.json").write_text(json.dumps(RESULTS), encoding="utf-8")
     assert sims and max(sims) < 0.4, "impostor similarity must stay below the provisional 0.40 threshold"

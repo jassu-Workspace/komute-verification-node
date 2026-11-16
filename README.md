@@ -17,8 +17,8 @@ Any failed gate gives `REJECTED` with every reason code, each marked **retryable
 On Windows, one command checks everything and starts it:
 
 ```powershell
-.\install.ps1           # once, on a fresh x64 Windows 10 1809+/Server 2019+ machine: checks RAM, disk and network; installs the Visual C++ runtime (Microsoft signature checked, asks for admin), uv, Python 3.12, the venv, requirements.lock, the 4 models (SHA-256 checked against models.lock), dev keys; then runs the tests
-.\install.ps1 -SkipTests   # same, without the tests; -Force re-downloads models and reinstalls packages
+.\setup.ps1           # once, on a fresh x64 Windows 10 1809+/Server 2019+ machine: checks RAM, disk and network; installs the Visual C++ runtime (Microsoft signature checked, asks for admin), uv, Python 3.12, the venv, requirements.lock, the 4 models (SHA-256 checked against models.lock), dev keys; then runs the tests
+.\setup.ps1 -SkipTests   # same, without the tests; -Force re-downloads models and reinstalls packages
 .\run.ps1               # checks uv, Python 3.12, dependencies (installs missing ones with uv) and model files; starts the backend on port 8000; opens the test page
 .\run.ps1 -CheckOnly    # checks only
 .\run.ps1 -WithApiKey   # require the X-API-Key header (key in %LOCALAPPDATA%\komute\dev.env)
@@ -34,11 +34,20 @@ python scripts/make_dev_keys.py && source scripts/dev_env.sh
 KOMUTE_DEV_SKIP_LIVENESS=true "$PY" -m uvicorn backend.app.main:create_app --factory --workers 1
 ```
 
+On an Ubuntu 22.04/24.04 x86_64 server (2 GB RAM or more), from the unpacked source folder:
+
+```bash
+sudo ./setup.sh                  # packages, user komute, uv, Python 3.12, requirements.lock, models (SHA-256 checked), /etc/komute/komute.env, systemd service
+sudo systemctl restart komute    # the service runs ./start.sh; logs: journalctl -u komute -f
+```
+
+Guides (PDF): [`docs/guides/`](docs/guides/).
+
 Open `http://127.0.0.1:8000/` for the test page. Keep `--workers 1`. Settings and the container are in [`docs/DEPLOYMENT_AND_OPERATIONS.md`](docs/DEPLOYMENT_AND_OPERATIONS.md).
 
 ## API
 
-`POST /v1/verify`, `multipart/form-data`. No key is needed by default; if `KOMUTE_API_KEY` is set, send header `X-API-Key`. The full contract for the main application is in [`docs/INTEGRATION_GUIDE.md`](docs/INTEGRATION_GUIDE.md).
+`POST /v1/verify`, `multipart/form-data`. No key is needed by default; if `KOMUTE_API_KEY` is set, send header `X-API-Key`. The full contract for the main application is in [`docs/INTEGRATION_GUIDE.md`](docs/INTEGRATION_GUIDE.md). To test every endpoint in Postman, import the collection in [`postman/`](postman/README.md).
 
 | Field | Notes |
 |---|---|

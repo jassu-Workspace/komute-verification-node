@@ -1,0 +1,3877 @@
+{
+  "info": {
+    "name": "Komute-Local API",
+    "description": "Driver and vehicle verification node. Read postman/README.md first.\n\nSet the Postman working directory to the repo's postman folder so the sample images load. All sample data is fake.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "X-API-Key",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{apiKey}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// A fresh request_id for every request; replay requests use {{savedRid}} instead.",
+          "pm.collectionVariables.set(\"rid\", \"pm-\" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6));"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"answers within 60 s\", () => pm.expect(pm.response.responseTime).to.be.below(60000));",
+          "pm.test(\"security headers present\", () => { pm.expect(pm.response.headers.get(\"X-Content-Type-Options\")).to.eql(\"nosniff\"); pm.expect(pm.response.headers.get(\"Content-Security-Policy\")).to.include(\"frame-ancestors 'none'\"); });"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "fullName",
+      "value": "Alex Jamie Tester"
+    },
+    {
+      "key": "dateOfBirth",
+      "value": "1990-03-15"
+    },
+    {
+      "key": "licenceNumber",
+      "value": "T12345678901234"
+    },
+    {
+      "key": "province",
+      "value": "ON"
+    },
+    {
+      "key": "licenceClass",
+      "value": "G"
+    },
+    {
+      "key": "issueDate",
+      "value": "2023-09-14"
+    },
+    {
+      "key": "expiryDate",
+      "value": "2030-12-31"
+    },
+    {
+      "key": "plateNumber",
+      "value": "ABC123"
+    },
+    {
+      "key": "vehicleColour",
+      "value": "Grey"
+    },
+    {
+      "key": "driverId",
+      "value": "pm-driver-1"
+    },
+    {
+      "key": "consentAt",
+      "value": "2026-11-12T10:00:00Z"
+    },
+    {
+      "key": "consentPolicyVersion",
+      "value": "v1"
+    },
+    {
+      "key": "rid",
+      "value": ""
+    },
+    {
+      "key": "savedRid",
+      "value": ""
+    },
+    {
+      "key": "savedManifest",
+      "value": ""
+    },
+    {
+      "key": "savedDecision",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Health and monitoring",
+      "description": "Read-only endpoints. They never change state.",
+      "item": [
+        {
+          "name": "Health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 200 (503 means a required model failed to load)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"status ok\", () => pm.expect(body.status).to.eql(\"ok\"));",
+                  "pm.test(\"required models loaded\", () => [\"face_embedder\", \"plate_detector\", \"plate_ocr\"].forEach(m => pm.expect(body.models_loaded[m], m).to.be.true));",
+                  "pm.test(\"rss_mb is a number\", () => pm.expect(body.rss_mb).to.be.a(\"number\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Liveness probe for the host or load balancer. 200 = ready, 503 = degraded."
+          }
+        },
+        {
+          "name": "System figures (JSON)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"has live sample, models and engine state\", () => { pm.expect(body.sample.memory.process_rss_mb).to.be.above(0); pm.expect(body.models).to.be.an(\"array\").that.is.not.empty; pm.expect(body.engine).to.have.property(\"busy\"); });",
+                  "pm.test(\"never returns secrets\", () => [\"api_key\", \"storage_key_b64\", \"manifest_key_b64\"].forEach(k => pm.expect(body.settings).to.not.have.property(k)));",
+                  "pm.test(\"memory under the 1200 MB limit\", () => pm.expect(body.sample.memory.process_rss_mb).to.be.below(body.budget_mb.peak_limit));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/system",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "system"
+              ]
+            },
+            "description": "Data behind the /stats dashboard. Needs X-API-Key when authentication is on."
+          }
+        },
+        {
+          "name": "System dashboard (browser view)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"returns the HTML dashboard\", () => { pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"text/html\"); pm.expect(pm.response.text()).to.include(\"Komute System Monitor\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/html"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/system",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "system"
+              ]
+            },
+            "description": "A browser gets the dashboard page; open {{baseUrl}}/v1/system in a browser to see it live."
+          }
+        },
+        {
+          "name": "Test page",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"HTML test page\", () => pm.expect(pm.response.text()).to.include(\"Komute Verify\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": []
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Verify: main flow",
+      "description": "POST /v1/verify with the fake licence. The barcode stage passes; the selfie has no face, so the result is REJECTED with the retryable FACE_NOT_FOUND_SELFIE. That proves Stage 1 end to end without real personal data.",
+      "item": [
+        {
+          "name": "Verify: fake licence, barcode passes",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"decision is REJECTED\", () => pm.expect(body.decision).to.eql(\"REJECTED\"));",
+                  "pm.test(\"barcode stage ran and every licence rule passed\", () => { const b = body.stages.barcode; pm.expect(b.ran && b.readable && b.aamva).to.be.true; pm.expect(b.jurisdiction).to.eql(\"ON\"); pm.expect(b.gates_failed).to.eql([]); });",
+                  "pm.test(\"7 fields cross-checked, all matched\", () => { const c = body.stages.barcode.checks; pm.expect(c).to.have.length(7); c.forEach(r => pm.expect(r.passed, r.field).to.be.true); });",
+                  "pm.test(\"reasons include FACE_NOT_FOUND_SELFIE\", () => { const c = body.reasons.map(r => r.code); [\"FACE_NOT_FOUND_SELFIE\"].forEach(x => pm.expect(c).to.include(x)); });",
+                  "pm.test(\"FACE_NOT_FOUND_SELFIE is retryable\", () => pm.expect(body.reasons.find(r => r.code === \"FACE_NOT_FOUND_SELFIE\").retryable).to.be.true);",
+                  "pm.test(\"face stage ran\", () => pm.expect(body.stages.face.ran).to.be.true);",
+                  "pm.test(\"audit manifest is signed\", () => { pm.expect(body.audit.manifest_id).to.be.a(\"string\").and.not.empty; pm.expect(body.audit.key_id).to.be.a(\"string\"); });",
+                  "pm.test(\"timings and memory reported\", () => { pm.expect(body.timings_ms.total).to.be.above(0); pm.expect(body.rss_mb).to.be.above(0); });",
+                  "pm.test(\"full barcode fields only if the node enables them\", () => { if (body.barcode_fields) pm.expect(body.barcode_fields.DAQ).to.eql(\"T12345678901234\"); });",
+                  "// keep this request for the idempotency folder",
+                  "pm.collectionVariables.set(\"savedRid\", pm.collectionVariables.get(\"rid\"));",
+                  "pm.collectionVariables.set(\"savedManifest\", body.audit.manifest_id);",
+                  "pm.collectionVariables.set(\"savedDecision\", body.decision);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "request_id",
+                  "value": "{{rid}}",
+                  "type": "text"
+                },
+                {
+                  "key": "driver_id",
+                  "value": "{{driverId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_at",
+                  "value": "{{consentAt}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_policy_version",
+                  "value": "{{consentPolicyVersion}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.full_name",
+                  "value": "{{fullName}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.date_of_birth",
+                  "value": "{{dateOfBirth}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_number",
+                  "value": "{{licenceNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issuing_province",
+                  "value": "{{province}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_class",
+                  "value": "{{licenceClass}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issue_date",
+                  "value": "{{issueDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.expiry_date",
+                  "value": "{{expiryDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.plate_number",
+                  "value": "{{plateNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_colour",
+                  "value": "{{vehicleColour}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_make",
+                  "value": "Toyota",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_model",
+                  "value": "Corolla",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_year",
+                  "value": "2020",
+                  "type": "text"
+                },
+                {
+                  "key": "selfie",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_front",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_back",
+                  "type": "file",
+                  "src": "samples/licence_back_fake.png"
+                },
+                {
+                  "key": "vehicle",
+                  "type": "file",
+                  "src": "samples/vehicle.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "verify"
+              ]
+            },
+            "description": "Main happy path for Stage 1. Saves its request_id for the next folder."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Idempotency and stored results",
+      "description": "Uses the request_id saved by folder 2. Run folder 2 first.",
+      "item": [
+        {
+          "name": "Replay: same request_id, same data",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"returns the stored result (same manifest)\", () => pm.expect(body.audit.manifest_id).to.eql(pm.collectionVariables.get(\"savedManifest\")));",
+                  "pm.test(\"same decision\", () => pm.expect(body.decision).to.eql(pm.collectionVariables.get(\"savedDecision\")));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "request_id",
+                  "value": "{{savedRid}}",
+                  "type": "text"
+                },
+                {
+                  "key": "driver_id",
+                  "value": "{{driverId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_at",
+                  "value": "{{consentAt}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_policy_version",
+                  "value": "{{consentPolicyVersion}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.full_name",
+                  "value": "{{fullName}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.date_of_birth",
+                  "value": "{{dateOfBirth}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_number",
+                  "value": "{{licenceNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issuing_province",
+                  "value": "{{province}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_class",
+                  "value": "{{licenceClass}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issue_date",
+                  "value": "{{issueDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.expiry_date",
+                  "value": "{{expiryDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.plate_number",
+                  "value": "{{plateNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_colour",
+                  "value": "{{vehicleColour}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_make",
+                  "value": "Toyota",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_model",
+                  "value": "Corolla",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_year",
+                  "value": "2020",
+                  "type": "text"
+                },
+                {
+                  "key": "selfie",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_front",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_back",
+                  "type": "file",
+                  "src": "samples/licence_back_fake.png"
+                },
+                {
+                  "key": "vehicle",
+                  "type": "file",
+                  "src": "samples/vehicle.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "verify"
+              ]
+            },
+            "description": "The node does not re-run a verification it already decided."
+          }
+        },
+        {
+          "name": "Replay: same request_id, different data",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"error code REQUEST_ID_CONFLICT\", () => pm.expect(body.error.code).to.eql(\"REQUEST_ID_CONFLICT\"));",
+                  "pm.test(\"no decision in an error\", () => pm.expect(body).to.not.have.property(\"decision\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "request_id",
+                  "value": "{{savedRid}}",
+                  "type": "text"
+                },
+                {
+                  "key": "driver_id",
+                  "value": "{{driverId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_at",
+                  "value": "{{consentAt}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_policy_version",
+                  "value": "{{consentPolicyVersion}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.full_name",
+                  "value": "{{fullName}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.date_of_birth",
+                  "value": "{{dateOfBirth}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_number",
+                  "value": "{{licenceNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issuing_province",
+                  "value": "{{province}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_class",
+                  "value": "{{licenceClass}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issue_date",
+                  "value": "{{issueDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.expiry_date",
+                  "value": "{{expiryDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.plate_number",
+                  "value": "ZZZ999",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_colour",
+                  "value": "{{vehicleColour}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_make",
+                  "value": "Toyota",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_model",
+                  "value": "Corolla",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_year",
+                  "value": "2020",
+                  "type": "text"
+                },
+                {
+                  "key": "selfie",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_front",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_back",
+                  "type": "file",
+                  "src": "samples/licence_back_fake.png"
+                },
+                {
+                  "key": "vehicle",
+                  "type": "file",
+                  "src": "samples/vehicle.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "verify"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Get stored session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"matches the original\", () => { pm.expect(body.request_id).to.eql(pm.collectionVariables.get(\"savedRid\")); pm.expect(body.audit.manifest_id).to.eql(pm.collectionVariables.get(\"savedManifest\")); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/sessions/{{savedRid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "sessions",
+                "{{savedRid}}"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Get unknown session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"error code NOT_FOUND\", () => pm.expect(body.error.code).to.eql(\"NOT_FOUND\"));",
+                  "pm.test(\"no decision in an error\", () => pm.expect(body).to.not.have.property(\"decision\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/sessions/pm-does-not-exist",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "sessions",
+                "pm-does-not-exist"
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Stage 1 cross-checks",
+      "description": "Each request changes one claimed field. A mismatch is a final reason code; Stages 2 and 3 do not run.",
+      "item": [
+        {
+          "name": "Wrong licence class",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"decision is REJECTED\", () => pm.expect(body.decision).to.eql(\"REJECTED\"));",
+                  "pm.test(\"reasons include CLASS_MISMATCH\", () => { const c = body.reasons.map(r => r.code); [\"CLASS_MISMATCH\"].forEach(x => pm.expect(c).to.include(x)); });",
+                  "pm.test(\"check row licence_class fails\", () => { const row = body.stages.barcode.checks.find(c => c.field === \"licence_class\"); pm.expect(row, \"row present\").to.be.an(\"object\"); pm.expect(row.passed).to.eql(false); });",
+                  "pm.test(\"CLASS_MISMATCH is final\", () => pm.expect(body.reasons.find(r => r.code === \"CLASS_MISMATCH\").retryable).to.be.false);",
+                  "pm.test(\"face stage skipped\", () => pm.expect(body.stages.face.ran).to.be.false);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "request_id",
+                  "value": "{{rid}}",
+                  "type": "text"
+                },
+                {
+                  "key": "driver_id",
+                  "value": "{{driverId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_at",
+                  "value": "{{consentAt}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_policy_version",
+                  "value": "{{consentPolicyVersion}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.full_name",
+                  "value": "{{fullName}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.date_of_birth",
+                  "value": "{{dateOfBirth}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_number",
+                  "value": "{{licenceNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issuing_province",
+                  "value": "{{province}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_class",
+                  "value": "M",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issue_date",
+                  "value": "{{issueDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.expiry_date",
+                  "value": "{{expiryDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.plate_number",
+                  "value": "{{plateNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_colour",
+                  "value": "{{vehicleColour}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_make",
+                  "value": "Toyota",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_model",
+                  "value": "Corolla",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_year",
+                  "value": "2020",
+                  "type": "text"
+                },
+                {
+                  "key": "selfie",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_front",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_back",
+                  "type": "file",
+                  "src": "samples/licence_back_fake.png"
+                },
+                {
+                  "key": "vehicle",
+                  "type": "file",
+                  "src": "samples/vehicle.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "verify"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Licence class: case and spaces ignored",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"barcode stage ran and every licence rule passed\", () => { const b = body.stages.barcode; pm.expect(b.ran && b.readable && b.aamva).to.be.true; pm.expect(b.jurisdiction).to.eql(\"ON\"); pm.expect(b.gates_failed).to.eql([]); });",
+                  "pm.test(\"7 fields cross-checked, all matched\", () => { const c = body.stages.barcode.checks; pm.expect(c).to.have.length(7); c.forEach(r => pm.expect(r.passed, r.field).to.be.true); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "request_id",
+                  "value": "{{rid}}",
+                  "type": "text"
+                },
+                {
+                  "key": "driver_id",
+                  "value": "{{driverId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_at",
+                  "value": "{{consentAt}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_policy_version",
+                  "value": "{{consentPolicyVersion}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.full_name",
+                  "value": "{{fullName}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.date_of_birth",
+                  "value": "{{dateOfBirth}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_number",
+                  "value": "{{licenceNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issuing_province",
+                  "value": "{{province}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_class",
+                  "value": " g ",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issue_date",
+                  "value": "{{issueDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.expiry_date",
+                  "value": "{{expiryDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.plate_number",
+                  "value": "{{plateNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_colour",
+                  "value": "{{vehicleColour}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_make",
+                  "value": "Toyota",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_model",
+                  "value": "Corolla",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_year",
+                  "value": "2020",
+                  "type": "text"
+                },
+                {
+                  "key": "selfie",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_front",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_back",
+                  "type": "file",
+                  "src": "samples/licence_back_fake.png"
+                },
+                {
+                  "key": "vehicle",
+                  "type": "file",
+                  "src": "samples/vehicle.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "verify"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Wrong issue date",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"decision is REJECTED\", () => pm.expect(body.decision).to.eql(\"REJECTED\"));",
+                  "pm.test(\"reasons include ISSUE_DATE_MISMATCH\", () => { const c = body.reasons.map(r => r.code); [\"ISSUE_DATE_MISMATCH\"].forEach(x => pm.expect(c).to.include(x)); });",
+                  "pm.test(\"check row issue_date fails\", () => { const row = body.stages.barcode.checks.find(c => c.field === \"issue_date\"); pm.expect(row, \"row present\").to.be.an(\"object\"); pm.expect(row.passed).to.eql(false); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "request_id",
+                  "value": "{{rid}}",
+                  "type": "text"
+                },
+                {
+                  "key": "driver_id",
+                  "value": "{{driverId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_at",
+                  "value": "{{consentAt}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_policy_version",
+                  "value": "{{consentPolicyVersion}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.full_name",
+                  "value": "{{fullName}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.date_of_birth",
+                  "value": "{{dateOfBirth}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_number",
+                  "value": "{{licenceNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issuing_province",
+                  "value": "{{province}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_class",
+                  "value": "{{licenceClass}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issue_date",
+                  "value": "2023-09-15",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.expiry_date",
+                  "value": "{{expiryDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.plate_number",
+                  "value": "{{plateNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_colour",
+                  "value": "{{vehicleColour}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_make",
+                  "value": "Toyota",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_model",
+                  "value": "Corolla",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_year",
+                  "value": "2020",
+                  "type": "text"
+                },
+                {
+                  "key": "selfie",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_front",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_back",
+                  "type": "file",
+                  "src": "samples/licence_back_fake.png"
+                },
+                {
+                  "key": "vehicle",
+                  "type": "file",
+                  "src": "samples/vehicle.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "verify"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Wrong expiry date",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"decision is REJECTED\", () => pm.expect(body.decision).to.eql(\"REJECTED\"));",
+                  "pm.test(\"reasons include EXPIRY_DATE_MISMATCH\", () => { const c = body.reasons.map(r => r.code); [\"EXPIRY_DATE_MISMATCH\"].forEach(x => pm.expect(c).to.include(x)); });",
+                  "pm.test(\"check row expiry_date fails\", () => { const row = body.stages.barcode.checks.find(c => c.field === \"expiry_date\"); pm.expect(row, \"row present\").to.be.an(\"object\"); pm.expect(row.passed).to.eql(false); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "request_id",
+                  "value": "{{rid}}",
+                  "type": "text"
+                },
+                {
+                  "key": "driver_id",
+                  "value": "{{driverId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_at",
+                  "value": "{{consentAt}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_policy_version",
+                  "value": "{{consentPolicyVersion}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.full_name",
+                  "value": "{{fullName}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.date_of_birth",
+                  "value": "{{dateOfBirth}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_number",
+                  "value": "{{licenceNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issuing_province",
+                  "value": "{{province}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_class",
+                  "value": "{{licenceClass}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issue_date",
+                  "value": "{{issueDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.expiry_date",
+                  "value": "2031-12-31",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.plate_number",
+                  "value": "{{plateNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_colour",
+                  "value": "{{vehicleColour}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_make",
+                  "value": "Toyota",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_model",
+                  "value": "Corolla",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_year",
+                  "value": "2020",
+                  "type": "text"
+                },
+                {
+                  "key": "selfie",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_front",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_back",
+                  "type": "file",
+                  "src": "samples/licence_back_fake.png"
+                },
+                {
+                  "key": "vehicle",
+                  "type": "file",
+                  "src": "samples/vehicle.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "verify"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Wrong date of birth",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"decision is REJECTED\", () => pm.expect(body.decision).to.eql(\"REJECTED\"));",
+                  "pm.test(\"reasons include DOB_MISMATCH\", () => { const c = body.reasons.map(r => r.code); [\"DOB_MISMATCH\"].forEach(x => pm.expect(c).to.include(x)); });",
+                  "pm.test(\"check row date_of_birth fails\", () => { const row = body.stages.barcode.checks.find(c => c.field === \"date_of_birth\"); pm.expect(row, \"row present\").to.be.an(\"object\"); pm.expect(row.passed).to.eql(false); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "request_id",
+                  "value": "{{rid}}",
+                  "type": "text"
+                },
+                {
+                  "key": "driver_id",
+                  "value": "{{driverId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_at",
+                  "value": "{{consentAt}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_policy_version",
+                  "value": "{{consentPolicyVersion}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.full_name",
+                  "value": "{{fullName}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.date_of_birth",
+                  "value": "1990-03-16",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_number",
+                  "value": "{{licenceNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issuing_province",
+                  "value": "{{province}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_class",
+                  "value": "{{licenceClass}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issue_date",
+                  "value": "{{issueDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.expiry_date",
+                  "value": "{{expiryDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.plate_number",
+                  "value": "{{plateNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_colour",
+                  "value": "{{vehicleColour}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_make",
+                  "value": "Toyota",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_model",
+                  "value": "Corolla",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_year",
+                  "value": "2020",
+                  "type": "text"
+                },
+                {
+                  "key": "selfie",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_front",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_back",
+                  "type": "file",
+                  "src": "samples/licence_back_fake.png"
+                },
+                {
+                  "key": "vehicle",
+                  "type": "file",
+                  "src": "samples/vehicle.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "verify"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Wrong licence number",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"decision is REJECTED\", () => pm.expect(body.decision).to.eql(\"REJECTED\"));",
+                  "pm.test(\"reasons include LICENCE_NUMBER_MISMATCH\", () => { const c = body.reasons.map(r => r.code); [\"LICENCE_NUMBER_MISMATCH\"].forEach(x => pm.expect(c).to.include(x)); });",
+                  "pm.test(\"check row licence_number fails\", () => { const row = body.stages.barcode.checks.find(c => c.field === \"licence_number\"); pm.expect(row, \"row present\").to.be.an(\"object\"); pm.expect(row.passed).to.eql(false); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "request_id",
+                  "value": "{{rid}}",
+                  "type": "text"
+                },
+                {
+                  "key": "driver_id",
+                  "value": "{{driverId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_at",
+                  "value": "{{consentAt}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_policy_version",
+                  "value": "{{consentPolicyVersion}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.full_name",
+                  "value": "{{fullName}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.date_of_birth",
+                  "value": "{{dateOfBirth}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_number",
+                  "value": "T99999999999999",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issuing_province",
+                  "value": "{{province}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_class",
+                  "value": "{{licenceClass}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issue_date",
+                  "value": "{{issueDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.expiry_date",
+                  "value": "{{expiryDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.plate_number",
+                  "value": "{{plateNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_colour",
+                  "value": "{{vehicleColour}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_make",
+                  "value": "Toyota",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_model",
+                  "value": "Corolla",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_year",
+                  "value": "2020",
+                  "type": "text"
+                },
+                {
+                  "key": "selfie",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_front",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_back",
+                  "type": "file",
+                  "src": "samples/licence_back_fake.png"
+                },
+                {
+                  "key": "vehicle",
+                  "type": "file",
+                  "src": "samples/vehicle.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "verify"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Licence number with hyphens matches",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"barcode stage ran and every licence rule passed\", () => { const b = body.stages.barcode; pm.expect(b.ran && b.readable && b.aamva).to.be.true; pm.expect(b.jurisdiction).to.eql(\"ON\"); pm.expect(b.gates_failed).to.eql([]); });",
+                  "pm.test(\"7 fields cross-checked, all matched\", () => { const c = body.stages.barcode.checks; pm.expect(c).to.have.length(7); c.forEach(r => pm.expect(r.passed, r.field).to.be.true); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "request_id",
+                  "value": "{{rid}}",
+                  "type": "text"
+                },
+                {
+                  "key": "driver_id",
+                  "value": "{{driverId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_at",
+                  "value": "{{consentAt}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_policy_version",
+                  "value": "{{consentPolicyVersion}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.full_name",
+                  "value": "{{fullName}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.date_of_birth",
+                  "value": "{{dateOfBirth}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_number",
+                  "value": "T1234-56789-01234",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issuing_province",
+                  "value": "{{province}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_class",
+                  "value": "{{licenceClass}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issue_date",
+                  "value": "{{issueDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.expiry_date",
+                  "value": "{{expiryDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.plate_number",
+                  "value": "{{plateNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_colour",
+                  "value": "{{vehicleColour}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_make",
+                  "value": "Toyota",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_model",
+                  "value": "Corolla",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_year",
+                  "value": "2020",
+                  "type": "text"
+                },
+                {
+                  "key": "selfie",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_front",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_back",
+                  "type": "file",
+                  "src": "samples/licence_back_fake.png"
+                },
+                {
+                  "key": "vehicle",
+                  "type": "file",
+                  "src": "samples/vehicle.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "verify"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Wrong province",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"decision is REJECTED\", () => pm.expect(body.decision).to.eql(\"REJECTED\"));",
+                  "pm.test(\"reasons include JURISDICTION_MISMATCH\", () => { const c = body.reasons.map(r => r.code); [\"JURISDICTION_MISMATCH\"].forEach(x => pm.expect(c).to.include(x)); });",
+                  "pm.test(\"check row issuing_province fails\", () => { const row = body.stages.barcode.checks.find(c => c.field === \"issuing_province\"); pm.expect(row, \"row present\").to.be.an(\"object\"); pm.expect(row.passed).to.eql(false); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "request_id",
+                  "value": "{{rid}}",
+                  "type": "text"
+                },
+                {
+                  "key": "driver_id",
+                  "value": "{{driverId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_at",
+                  "value": "{{consentAt}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_policy_version",
+                  "value": "{{consentPolicyVersion}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.full_name",
+                  "value": "{{fullName}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.date_of_birth",
+                  "value": "{{dateOfBirth}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_number",
+                  "value": "{{licenceNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issuing_province",
+                  "value": "QC",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_class",
+                  "value": "{{licenceClass}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issue_date",
+                  "value": "{{issueDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.expiry_date",
+                  "value": "{{expiryDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.plate_number",
+                  "value": "{{plateNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_colour",
+                  "value": "{{vehicleColour}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_make",
+                  "value": "Toyota",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_model",
+                  "value": "Corolla",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_year",
+                  "value": "2020",
+                  "type": "text"
+                },
+                {
+                  "key": "selfie",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_front",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_back",
+                  "type": "file",
+                  "src": "samples/licence_back_fake.png"
+                },
+                {
+                  "key": "vehicle",
+                  "type": "file",
+                  "src": "samples/vehicle.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "verify"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Name with one typo passes (about 94%)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"barcode stage ran and every licence rule passed\", () => { const b = body.stages.barcode; pm.expect(b.ran && b.readable && b.aamva).to.be.true; pm.expect(b.jurisdiction).to.eql(\"ON\"); pm.expect(b.gates_failed).to.eql([]); });",
+                  "pm.test(\"7 fields cross-checked, all matched\", () => { const c = body.stages.barcode.checks; pm.expect(c).to.have.length(7); c.forEach(r => pm.expect(r.passed, r.field).to.be.true); });",
+                  "pm.test(\"reasons exclude NAME_MISMATCH\", () => { const c = body.reasons.map(r => r.code); [\"NAME_MISMATCH\"].forEach(x => pm.expect(c).to.not.include(x)); });",
+                  "pm.test(\"name score at or above the 90% pass mark\", () => { const r = body.stages.barcode.checks.find(c => c.field === \"full_name\"); pm.expect(r.score).to.be.at.least(r.threshold).and.below(100); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "request_id",
+                  "value": "{{rid}}",
+                  "type": "text"
+                },
+                {
+                  "key": "driver_id",
+                  "value": "{{driverId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_at",
+                  "value": "{{consentAt}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_policy_version",
+                  "value": "{{consentPolicyVersion}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.full_name",
+                  "value": "Alex Jamie Testor",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.date_of_birth",
+                  "value": "{{dateOfBirth}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_number",
+                  "value": "{{licenceNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issuing_province",
+                  "value": "{{province}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_class",
+                  "value": "{{licenceClass}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issue_date",
+                  "value": "{{issueDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.expiry_date",
+                  "value": "{{expiryDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.plate_number",
+                  "value": "{{plateNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_colour",
+                  "value": "{{vehicleColour}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_make",
+                  "value": "Toyota",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_model",
+                  "value": "Corolla",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_year",
+                  "value": "2020",
+                  "type": "text"
+                },
+                {
+                  "key": "selfie",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_front",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_back",
+                  "type": "file",
+                  "src": "samples/licence_back_fake.png"
+                },
+                {
+                  "key": "vehicle",
+                  "type": "file",
+                  "src": "samples/vehicle.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "verify"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Different name fails",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"decision is REJECTED\", () => pm.expect(body.decision).to.eql(\"REJECTED\"));",
+                  "pm.test(\"reasons include NAME_MISMATCH\", () => { const c = body.reasons.map(r => r.code); [\"NAME_MISMATCH\"].forEach(x => pm.expect(c).to.include(x)); });",
+                  "pm.test(\"check row full_name fails\", () => { const row = body.stages.barcode.checks.find(c => c.field === \"full_name\"); pm.expect(row, \"row present\").to.be.an(\"object\"); pm.expect(row.passed).to.eql(false); });",
+                  "pm.test(\"name score below the pass mark\", () => { const r = body.stages.barcode.checks.find(c => c.field === \"full_name\"); pm.expect(r.score).to.be.below(r.threshold); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "request_id",
+                  "value": "{{rid}}",
+                  "type": "text"
+                },
+                {
+                  "key": "driver_id",
+                  "value": "{{driverId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_at",
+                  "value": "{{consentAt}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_policy_version",
+                  "value": "{{consentPolicyVersion}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.full_name",
+                  "value": "Alan Jamie Tester",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.date_of_birth",
+                  "value": "{{dateOfBirth}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_number",
+                  "value": "{{licenceNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issuing_province",
+                  "value": "{{province}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_class",
+                  "value": "{{licenceClass}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issue_date",
+                  "value": "{{issueDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.expiry_date",
+                  "value": "{{expiryDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.plate_number",
+                  "value": "{{plateNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_colour",
+                  "value": "{{vehicleColour}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_make",
+                  "value": "Toyota",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_model",
+                  "value": "Corolla",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_year",
+                  "value": "2020",
+                  "type": "text"
+                },
+                {
+                  "key": "selfie",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_front",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_back",
+                  "type": "file",
+                  "src": "samples/licence_back_fake.png"
+                },
+                {
+                  "key": "vehicle",
+                  "type": "file",
+                  "src": "samples/vehicle.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "verify"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Several mismatches are all listed",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"decision is REJECTED\", () => pm.expect(body.decision).to.eql(\"REJECTED\"));",
+                  "pm.test(\"reasons include CLASS_MISMATCH, EXPIRY_DATE_MISMATCH, DOB_MISMATCH\", () => { const c = body.reasons.map(r => r.code); [\"CLASS_MISMATCH\", \"EXPIRY_DATE_MISMATCH\", \"DOB_MISMATCH\"].forEach(x => pm.expect(c).to.include(x)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "request_id",
+                  "value": "{{rid}}",
+                  "type": "text"
+                },
+                {
+                  "key": "driver_id",
+                  "value": "{{driverId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_at",
+                  "value": "{{consentAt}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_policy_version",
+                  "value": "{{consentPolicyVersion}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.full_name",
+                  "value": "{{fullName}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.date_of_birth",
+                  "value": "1991-03-15",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_number",
+                  "value": "{{licenceNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issuing_province",
+                  "value": "{{province}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_class",
+                  "value": "M",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issue_date",
+                  "value": "{{issueDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.expiry_date",
+                  "value": "2031-12-31",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.plate_number",
+                  "value": "{{plateNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_colour",
+                  "value": "{{vehicleColour}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_make",
+                  "value": "Toyota",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_model",
+                  "value": "Corolla",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_year",
+                  "value": "2020",
+                  "type": "text"
+                },
+                {
+                  "key": "selfie",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_front",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_back",
+                  "type": "file",
+                  "src": "samples/licence_back_fake.png"
+                },
+                {
+                  "key": "vehicle",
+                  "type": "file",
+                  "src": "samples/vehicle.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "verify"
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Barcode problems",
+      "description": "What the driver sees when the barcode photo is bad.",
+      "item": [
+        {
+          "name": "Unreadable barcode",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"decision is REJECTED\", () => pm.expect(body.decision).to.eql(\"REJECTED\"));",
+                  "pm.test(\"reasons include BARCODE_UNREADABLE\", () => { const c = body.reasons.map(r => r.code); [\"BARCODE_UNREADABLE\"].forEach(x => pm.expect(c).to.include(x)); });",
+                  "pm.test(\"retryable, with the retake message\", () => { const r = body.reasons.find(x => x.code === \"BARCODE_UNREADABLE\"); pm.expect(r.retryable).to.be.true; pm.expect(r.message).to.include(\"not clearly visible\"); });",
+                  "pm.test(\"later stages skipped\", () => { pm.expect(body.stages.face.ran).to.be.false; pm.expect(body.stages.vehicle.ran).to.be.false; });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "request_id",
+                  "value": "{{rid}}",
+                  "type": "text"
+                },
+                {
+                  "key": "driver_id",
+                  "value": "{{driverId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_at",
+                  "value": "{{consentAt}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_policy_version",
+                  "value": "{{consentPolicyVersion}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.full_name",
+                  "value": "{{fullName}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.date_of_birth",
+                  "value": "{{dateOfBirth}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_number",
+                  "value": "{{licenceNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issuing_province",
+                  "value": "{{province}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_class",
+                  "value": "{{licenceClass}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issue_date",
+                  "value": "{{issueDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.expiry_date",
+                  "value": "{{expiryDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.plate_number",
+                  "value": "{{plateNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_colour",
+                  "value": "{{vehicleColour}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_make",
+                  "value": "Toyota",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_model",
+                  "value": "Corolla",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_year",
+                  "value": "2020",
+                  "type": "text"
+                },
+                {
+                  "key": "selfie",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_front",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_back",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "vehicle",
+                  "type": "file",
+                  "src": "samples/vehicle.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "verify"
+              ]
+            },
+            "description": "The licence back is a plain image, so no PDF417 is found."
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Input validation (422)",
+      "description": "Bad requests return 422 with a specific code and never a decision.",
+      "item": [
+        {
+          "name": "Missing licence class",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"error code MISSING_FIELD\", () => pm.expect(body.error.code).to.eql(\"MISSING_FIELD\"));",
+                  "pm.test(\"no decision in an error\", () => pm.expect(body).to.not.have.property(\"decision\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "request_id",
+                  "value": "{{rid}}",
+                  "type": "text"
+                },
+                {
+                  "key": "driver_id",
+                  "value": "{{driverId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_at",
+                  "value": "{{consentAt}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_policy_version",
+                  "value": "{{consentPolicyVersion}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.full_name",
+                  "value": "{{fullName}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.date_of_birth",
+                  "value": "{{dateOfBirth}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_number",
+                  "value": "{{licenceNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issuing_province",
+                  "value": "{{province}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issue_date",
+                  "value": "{{issueDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.expiry_date",
+                  "value": "{{expiryDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.plate_number",
+                  "value": "{{plateNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_colour",
+                  "value": "{{vehicleColour}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_make",
+                  "value": "Toyota",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_model",
+                  "value": "Corolla",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_year",
+                  "value": "2020",
+                  "type": "text"
+                },
+                {
+                  "key": "selfie",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_front",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_back",
+                  "type": "file",
+                  "src": "samples/licence_back_fake.png"
+                },
+                {
+                  "key": "vehicle",
+                  "type": "file",
+                  "src": "samples/vehicle.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "verify"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Missing expiry date",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"error code MISSING_FIELD\", () => pm.expect(body.error.code).to.eql(\"MISSING_FIELD\"));",
+                  "pm.test(\"no decision in an error\", () => pm.expect(body).to.not.have.property(\"decision\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "request_id",
+                  "value": "{{rid}}",
+                  "type": "text"
+                },
+                {
+                  "key": "driver_id",
+                  "value": "{{driverId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_at",
+                  "value": "{{consentAt}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_policy_version",
+                  "value": "{{consentPolicyVersion}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.full_name",
+                  "value": "{{fullName}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.date_of_birth",
+                  "value": "{{dateOfBirth}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_number",
+                  "value": "{{licenceNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issuing_province",
+                  "value": "{{province}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_class",
+                  "value": "{{licenceClass}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issue_date",
+                  "value": "{{issueDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.plate_number",
+                  "value": "{{plateNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_colour",
+                  "value": "{{vehicleColour}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_make",
+                  "value": "Toyota",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_model",
+                  "value": "Corolla",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_year",
+                  "value": "2020",
+                  "type": "text"
+                },
+                {
+                  "key": "selfie",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_front",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_back",
+                  "type": "file",
+                  "src": "samples/licence_back_fake.png"
+                },
+                {
+                  "key": "vehicle",
+                  "type": "file",
+                  "src": "samples/vehicle.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "verify"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Issue date in wrong format",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"error code INVALID_FIELD\", () => pm.expect(body.error.code).to.eql(\"INVALID_FIELD\"));",
+                  "pm.test(\"no decision in an error\", () => pm.expect(body).to.not.have.property(\"decision\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "request_id",
+                  "value": "{{rid}}",
+                  "type": "text"
+                },
+                {
+                  "key": "driver_id",
+                  "value": "{{driverId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_at",
+                  "value": "{{consentAt}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_policy_version",
+                  "value": "{{consentPolicyVersion}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.full_name",
+                  "value": "{{fullName}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.date_of_birth",
+                  "value": "{{dateOfBirth}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_number",
+                  "value": "{{licenceNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issuing_province",
+                  "value": "{{province}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_class",
+                  "value": "{{licenceClass}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issue_date",
+                  "value": "14/09/2023",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.expiry_date",
+                  "value": "{{expiryDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.plate_number",
+                  "value": "{{plateNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_colour",
+                  "value": "{{vehicleColour}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_make",
+                  "value": "Toyota",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_model",
+                  "value": "Corolla",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_year",
+                  "value": "2020",
+                  "type": "text"
+                },
+                {
+                  "key": "selfie",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_front",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_back",
+                  "type": "file",
+                  "src": "samples/licence_back_fake.png"
+                },
+                {
+                  "key": "vehicle",
+                  "type": "file",
+                  "src": "samples/vehicle.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "verify"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Unknown province",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"error code INVALID_FIELD\", () => pm.expect(body.error.code).to.eql(\"INVALID_FIELD\"));",
+                  "pm.test(\"no decision in an error\", () => pm.expect(body).to.not.have.property(\"decision\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "request_id",
+                  "value": "{{rid}}",
+                  "type": "text"
+                },
+                {
+                  "key": "driver_id",
+                  "value": "{{driverId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_at",
+                  "value": "{{consentAt}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_policy_version",
+                  "value": "{{consentPolicyVersion}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.full_name",
+                  "value": "{{fullName}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.date_of_birth",
+                  "value": "{{dateOfBirth}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_number",
+                  "value": "{{licenceNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issuing_province",
+                  "value": "ZZ",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_class",
+                  "value": "{{licenceClass}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issue_date",
+                  "value": "{{issueDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.expiry_date",
+                  "value": "{{expiryDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.plate_number",
+                  "value": "{{plateNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_colour",
+                  "value": "{{vehicleColour}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_make",
+                  "value": "Toyota",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_model",
+                  "value": "Corolla",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_year",
+                  "value": "2020",
+                  "type": "text"
+                },
+                {
+                  "key": "selfie",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_front",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_back",
+                  "type": "file",
+                  "src": "samples/licence_back_fake.png"
+                },
+                {
+                  "key": "vehicle",
+                  "type": "file",
+                  "src": "samples/vehicle.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "verify"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Missing consent",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"error code CONSENT_REQUIRED\", () => pm.expect(body.error.code).to.eql(\"CONSENT_REQUIRED\"));",
+                  "pm.test(\"no decision in an error\", () => pm.expect(body).to.not.have.property(\"decision\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "request_id",
+                  "value": "{{rid}}",
+                  "type": "text"
+                },
+                {
+                  "key": "driver_id",
+                  "value": "{{driverId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_policy_version",
+                  "value": "{{consentPolicyVersion}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.full_name",
+                  "value": "{{fullName}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.date_of_birth",
+                  "value": "{{dateOfBirth}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_number",
+                  "value": "{{licenceNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issuing_province",
+                  "value": "{{province}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_class",
+                  "value": "{{licenceClass}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issue_date",
+                  "value": "{{issueDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.expiry_date",
+                  "value": "{{expiryDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.plate_number",
+                  "value": "{{plateNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_colour",
+                  "value": "{{vehicleColour}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_make",
+                  "value": "Toyota",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_model",
+                  "value": "Corolla",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_year",
+                  "value": "2020",
+                  "type": "text"
+                },
+                {
+                  "key": "selfie",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_front",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_back",
+                  "type": "file",
+                  "src": "samples/licence_back_fake.png"
+                },
+                {
+                  "key": "vehicle",
+                  "type": "file",
+                  "src": "samples/vehicle.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "verify"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Consent time without time zone",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"error code INVALID_FIELD\", () => pm.expect(body.error.code).to.eql(\"INVALID_FIELD\"));",
+                  "pm.test(\"no decision in an error\", () => pm.expect(body).to.not.have.property(\"decision\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "request_id",
+                  "value": "{{rid}}",
+                  "type": "text"
+                },
+                {
+                  "key": "driver_id",
+                  "value": "{{driverId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_at",
+                  "value": "2026-11-12T10:00:00",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_policy_version",
+                  "value": "{{consentPolicyVersion}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.full_name",
+                  "value": "{{fullName}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.date_of_birth",
+                  "value": "{{dateOfBirth}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_number",
+                  "value": "{{licenceNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issuing_province",
+                  "value": "{{province}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_class",
+                  "value": "{{licenceClass}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issue_date",
+                  "value": "{{issueDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.expiry_date",
+                  "value": "{{expiryDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.plate_number",
+                  "value": "{{plateNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_colour",
+                  "value": "{{vehicleColour}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_make",
+                  "value": "Toyota",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_model",
+                  "value": "Corolla",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_year",
+                  "value": "2020",
+                  "type": "text"
+                },
+                {
+                  "key": "selfie",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_front",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_back",
+                  "type": "file",
+                  "src": "samples/licence_back_fake.png"
+                },
+                {
+                  "key": "vehicle",
+                  "type": "file",
+                  "src": "samples/vehicle.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "verify"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Bad request_id characters",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"error code INVALID_FIELD\", () => pm.expect(body.error.code).to.eql(\"INVALID_FIELD\"));",
+                  "pm.test(\"no decision in an error\", () => pm.expect(body).to.not.have.property(\"decision\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "request_id",
+                  "value": "bad id!",
+                  "type": "text"
+                },
+                {
+                  "key": "driver_id",
+                  "value": "{{driverId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_at",
+                  "value": "{{consentAt}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_policy_version",
+                  "value": "{{consentPolicyVersion}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.full_name",
+                  "value": "{{fullName}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.date_of_birth",
+                  "value": "{{dateOfBirth}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_number",
+                  "value": "{{licenceNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issuing_province",
+                  "value": "{{province}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_class",
+                  "value": "{{licenceClass}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issue_date",
+                  "value": "{{issueDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.expiry_date",
+                  "value": "{{expiryDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.plate_number",
+                  "value": "{{plateNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_colour",
+                  "value": "{{vehicleColour}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_make",
+                  "value": "Toyota",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_model",
+                  "value": "Corolla",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_year",
+                  "value": "2020",
+                  "type": "text"
+                },
+                {
+                  "key": "selfie",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_front",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_back",
+                  "type": "file",
+                  "src": "samples/licence_back_fake.png"
+                },
+                {
+                  "key": "vehicle",
+                  "type": "file",
+                  "src": "samples/vehicle.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "verify"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Missing selfie image",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"error code MISSING_FIELD\", () => pm.expect(body.error.code).to.eql(\"MISSING_FIELD\"));",
+                  "pm.test(\"no decision in an error\", () => pm.expect(body).to.not.have.property(\"decision\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "request_id",
+                  "value": "{{rid}}",
+                  "type": "text"
+                },
+                {
+                  "key": "driver_id",
+                  "value": "{{driverId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_at",
+                  "value": "{{consentAt}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_policy_version",
+                  "value": "{{consentPolicyVersion}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.full_name",
+                  "value": "{{fullName}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.date_of_birth",
+                  "value": "{{dateOfBirth}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_number",
+                  "value": "{{licenceNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issuing_province",
+                  "value": "{{province}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_class",
+                  "value": "{{licenceClass}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issue_date",
+                  "value": "{{issueDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.expiry_date",
+                  "value": "{{expiryDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.plate_number",
+                  "value": "{{plateNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_colour",
+                  "value": "{{vehicleColour}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_make",
+                  "value": "Toyota",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_model",
+                  "value": "Corolla",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_year",
+                  "value": "2020",
+                  "type": "text"
+                },
+                {
+                  "key": "licence_front",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_back",
+                  "type": "file",
+                  "src": "samples/licence_back_fake.png"
+                },
+                {
+                  "key": "vehicle",
+                  "type": "file",
+                  "src": "samples/vehicle.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "verify"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Vehicle year not a year",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"error code INVALID_FIELD\", () => pm.expect(body.error.code).to.eql(\"INVALID_FIELD\"));",
+                  "pm.test(\"no decision in an error\", () => pm.expect(body).to.not.have.property(\"decision\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "request_id",
+                  "value": "{{rid}}",
+                  "type": "text"
+                },
+                {
+                  "key": "driver_id",
+                  "value": "{{driverId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_at",
+                  "value": "{{consentAt}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_policy_version",
+                  "value": "{{consentPolicyVersion}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.full_name",
+                  "value": "{{fullName}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.date_of_birth",
+                  "value": "{{dateOfBirth}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_number",
+                  "value": "{{licenceNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issuing_province",
+                  "value": "{{province}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_class",
+                  "value": "{{licenceClass}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issue_date",
+                  "value": "{{issueDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.expiry_date",
+                  "value": "{{expiryDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.plate_number",
+                  "value": "{{plateNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_colour",
+                  "value": "{{vehicleColour}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_make",
+                  "value": "Toyota",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_model",
+                  "value": "Corolla",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_year",
+                  "value": "abc",
+                  "type": "text"
+                },
+                {
+                  "key": "selfie",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_front",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_back",
+                  "type": "file",
+                  "src": "samples/licence_back_fake.png"
+                },
+                {
+                  "key": "vehicle",
+                  "type": "file",
+                  "src": "samples/vehicle.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "verify"
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Authentication",
+      "description": "Authentication is OFF by default. Start the node with .\\run.ps1 -WithApiKey, put the key from %LOCALAPPDATA%\\komute\\dev.env in the environment's apiKey, and set authEnabled to true.",
+      "item": [
+        {
+          "name": "Wrong API key",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get(\"authEnabled\") === \"true\") {",
+                  "  pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));",
+                  "  pm.test(\"error code UNAUTHORIZED\", () => pm.expect(pm.response.json().error.code).to.eql(\"UNAUTHORIZED\"));",
+                  "} else {",
+                  "  pm.test(\"auth is off: the key is ignored (HTTP 200)\", () => pm.response.to.have.status(200));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "wrong-key"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/system",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "system"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "No API key",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get(\"authEnabled\") === \"true\") {",
+                  "  pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));",
+                  "} else {",
+                  "  pm.test(\"auth is off: no key needed (HTTP 200)\", () => pm.response.to.have.status(200));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/system",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "system"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Verify with no API key",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get(\"authEnabled\") === \"true\") {",
+                  "  pm.test(\"HTTP 401, nothing verified\", () => pm.response.to.have.status(401));",
+                  "} else {",
+                  "  pm.test(\"auth is off: verification runs (HTTP 200)\", () => pm.response.to.have.status(200));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "request_id",
+                  "value": "{{rid}}",
+                  "type": "text"
+                },
+                {
+                  "key": "driver_id",
+                  "value": "{{driverId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_at",
+                  "value": "{{consentAt}}",
+                  "type": "text"
+                },
+                {
+                  "key": "consent_policy_version",
+                  "value": "{{consentPolicyVersion}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.full_name",
+                  "value": "{{fullName}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.date_of_birth",
+                  "value": "{{dateOfBirth}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_number",
+                  "value": "{{licenceNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issuing_province",
+                  "value": "{{province}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.licence_class",
+                  "value": "{{licenceClass}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.issue_date",
+                  "value": "{{issueDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.expiry_date",
+                  "value": "{{expiryDate}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.plate_number",
+                  "value": "{{plateNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_colour",
+                  "value": "{{vehicleColour}}",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_make",
+                  "value": "Toyota",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_model",
+                  "value": "Corolla",
+                  "type": "text"
+                },
+                {
+                  "key": "claimed.vehicle_year",
+                  "value": "2020",
+                  "type": "text"
+                },
+                {
+                  "key": "selfie",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_front",
+                  "type": "file",
+                  "src": "samples/no_face.png"
+                },
+                {
+                  "key": "licence_back",
+                  "type": "file",
+                  "src": "samples/licence_back_fake.png"
+                },
+                {
+                  "key": "vehicle",
+                  "type": "file",
+                  "src": "samples/vehicle.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "verify"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

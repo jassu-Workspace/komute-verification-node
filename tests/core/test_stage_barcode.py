@@ -52,3 +52,20 @@ def test_personal_data_only_in_checks():
     for secret in ("TESTER", "ALEX", "JAMIE", "19900315", "1990-03-15", FAKE_FIELDS["DAQ"], "1 TEST ST"):
         assert secret not in blob
     assert "1 TEST ST" not in json.dumps(checks)  # the address is never compared, so never in a check row
+
+
+def test_garbage_pdf417_read_does_not_stop_the_search(monkeypatch):
+    """A rotated photo can give a garbage PDF417 read on one variant; the decoder must keep looking for AAMVA."""
+    import zxingcpp
+
+    from backend.core.stages import barcode
+
+    class Hit:
+        def __init__(self, text):
+            self.bytes = text.encode("latin-1")
+
+    calls = iter([[Hit('HNA "\t21,:*')], [], [Hit(make_aamva_text())]])
+    monkeypatch.setattr(zxingcpp, "read_barcodes", lambda *a, **k: next(calls, []))
+    assert barcode.decode_pdf417(np.full((300, 400, 3), 200, np.uint8)).startswith("@")
+    calls = iter([[Hit("hello")]])
+    assert barcode.decode_pdf417(np.full((300, 400, 3), 200, np.uint8)) == "hello"  # non-AAMVA still reported

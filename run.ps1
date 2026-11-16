@@ -15,12 +15,14 @@
   .\run.ps1 -Port 8010 -NoBrowser
   .\run.ps1 -CheckOnly
   .\run.ps1 -WithApiKey      # require the X-API-Key header (key: %LOCALAPPDATA%\komute\dev.env)
+  .\run.ps1 -ApiKey komute-local-TEST-key-not-for-production   # require this key (Postman "auth on" environment)
   powershell -ExecutionPolicy Bypass -File .\run.ps1    # if script execution is blocked
 #>
 param(
     [int]$Port = 8000,
     [switch]$NoBrowser,
     [switch]$WithApiKey,
+    [string]$ApiKey = '',
     [switch]$CheckOnly
 )
 
@@ -106,7 +108,7 @@ $names = @($lock.PSObject.Properties.Name)
 $absent = @($names | Where-Object { -not (Test-Path -LiteralPath (Join-Path $ModelsDir $_)) })
 if ($absent.Count -gt 0) {
     Fail ("These model files are missing from $ModelsDir`:`n    " + ($absent -join "`n    ") +
-          "`nRun .\install.ps1 to download and hash-verify them, then run again.")
+          "`nRun .\setup.ps1 to download and hash-verify them, then run again.")
 }
 $verify = "from pathlib import Path; from backend.core.registry import verify_lock; " +
           "verify_lock(Path('backend/models'), Path('backend/models/models.lock'))"
@@ -126,7 +128,11 @@ if (-not (Test-Path -LiteralPath $DevEnv)) {
 foreach ($line in Get-Content -LiteralPath $DevEnv) {
     if ($line -match '^\s*([A-Z0-9_]+)=(.*)$') { [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2], 'Process') }
 }
-if ($WithApiKey) {
+if ($ApiKey) {
+    if ($ApiKey.Length -lt 24) { Fail '-ApiKey must be at least 24 characters.' }
+    $env:KOMUTE_API_KEY = $ApiKey
+    Ok 'authentication: ON with the key given in -ApiKey (callers must send the X-API-Key header)'
+} elseif ($WithApiKey) {
     Ok 'authentication: ON (callers must send the X-API-Key header; the key is in dev.env)'
 } else {
     Remove-Item Env:KOMUTE_API_KEY -ErrorAction SilentlyContinue
